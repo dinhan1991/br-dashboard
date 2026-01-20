@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import sqlite3
 import os
 from datetime import datetime
 
@@ -13,91 +12,100 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Database connection helper
-def get_db_connection():
-    """Get PostgreSQL database connection from Streamlit secrets or environment"""
-    try:
-        # Try Streamlit secrets first (for cloud deployment)
-        db_url = st.secrets["database"]["url"]
-    except:
-        # Fallback to environment variable for local development
-        db_url = os.getenv("DATABASE_URL", "")
-    
-    if not db_url:
-        st.error("⚠️ Database URL not configured. Please add database URL to Streamlit secrets.")
-        st.stop()
-    
-    return psycopg2.connect(db_url)
+# Database path
+DB_PATH = os.path.join(os.path.dirname(__file__), 'data.db')
 
 # Database functions
 def init_db():
-    """Initialize PostgreSQL database"""
-    conn = get_db_connection()
+    """Initialize SQLite database"""
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Buy Ready table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS articles (
-            id SERIAL PRIMARY KEY,
-            factory VARCHAR(100),
-            sports_category VARCHAR(100),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            factory TEXT,
+            sports_category TEXT,
             article_name TEXT,
-            model VARCHAR(100),
-            article_number VARCHAR(100) UNIQUE,
-            pre_confirm_date VARCHAR(50),
-            leading_buy_ready_date VARCHAR(50),
-            product_weight VARCHAR(100),
-            mcs_status VARCHAR(50) DEFAULT '',
-            fgt_status VARCHAR(50) DEFAULT '',
-            ft_status VARCHAR(50) DEFAULT '',
-            wt_status VARCHAR(50) DEFAULT '',
-            lifecycle_state VARCHAR(100) DEFAULT '',
-            created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            model TEXT,
+            article_number TEXT UNIQUE,
+            pre_confirm_date TEXT,
+            leading_buy_ready_date TEXT,
+            product_weight TEXT,
+            mcs_status TEXT DEFAULT '',
+            fgt_status TEXT DEFAULT '',
+            ft_status TEXT DEFAULT '',
+            wt_status TEXT DEFAULT '',
+            created_at TEXT,
+            updated_at TEXT
         )
     ''')
+    
+    # Add factory column if not exists (migration)
+    try:
+        cursor.execute('ALTER TABLE articles ADD COLUMN factory TEXT')
+    except:
+        pass
+    
+    # Add ft_status and wt_status columns (migration from ft_wt_status)
+    try:
+        cursor.execute('ALTER TABLE articles ADD COLUMN ft_status TEXT DEFAULT ""')
+    except:
+        pass
+    try:
+        cursor.execute('ALTER TABLE articles ADD COLUMN wt_status TEXT DEFAULT ""')
+    except:
+        pass
+    
+    # Add lifecycle_state column
+    try:
+        cursor.execute('ALTER TABLE articles ADD COLUMN lifecycle_state TEXT DEFAULT ""')
+    except:
+        pass
     
     # Drop Report table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS drop_articles (
-            id SERIAL PRIMARY KEY,
-            season VARCHAR(100),
-            factory VARCHAR(100),
-            sports_category VARCHAR(100),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            season TEXT,
+            factory TEXT,
+            sports_category TEXT,
             article_name TEXT,
-            model VARCHAR(100),
-            article_number VARCHAR(100),
-            created_at TIMESTAMP,
-            updated_at TIMESTAMP,
+            model TEXT,
+            article_number TEXT,
+            created_at TEXT,
+            updated_at TEXT,
             UNIQUE(season, article_number)
         )
     ''')
     
+    # Add factory column to drop_articles if not exists (migration)
+    try:
+        cursor.execute('ALTER TABLE drop_articles ADD COLUMN factory TEXT')
+    except:
+        pass
+    
     conn.commit()
-    cursor.close()
     conn.close()
 
 def load_from_db():
     """Load Buy Ready data from database"""
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM articles ORDER BY leading_buy_ready_date ASC", conn)
     conn.close()
     return df
 
 def load_drop_from_db():
     """Load Drop Report data from database"""
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM drop_articles ORDER BY season, sports_category", conn)
-    conn.close()
-    return df
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM drop_articles ORDER BY season, sports_category", conn)
     conn.close()
     return df
 
 def save_to_db(df_new):
     """Save Buy Ready data to database. Returns (inserted, updated, deleted, skipped, new_articles, changed_articles)"""
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     inserted = 0
@@ -196,7 +204,7 @@ def save_to_db(df_new):
 
 def save_drop_to_db(df_new):
     """Save Drop Report data to database"""
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     inserted = 0
@@ -249,7 +257,7 @@ def save_drop_to_db(df_new):
 
 def update_all_statuses(df):
     """Update all status columns from dataframe"""
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     
