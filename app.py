@@ -170,7 +170,7 @@ def save_to_db(df_new):
                     factory, sports_category, article_name, model, article_number,
                     pre_confirm_date, leading_buy_ready_date, product_weight, lifecycle_state,
                     mcs_status, fgt_status, ft_status, wt_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '', '', '', '', %s, %s)
             ''', (
                 str(row.get('Factory', '')),
                 str(row.get('Sports Category', '')),
