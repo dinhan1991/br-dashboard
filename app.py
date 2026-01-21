@@ -148,10 +148,10 @@ def save_to_db(df_new):
             
             cursor.execute('''
                 UPDATE articles SET
-                    factory = ?, sports_category = ?, article_name = ?, model = ?,
-                    pre_confirm_date = ?, leading_buy_ready_date = ?,
-                    product_weight = ?, lifecycle_state = ?, updated_at = ?
-                WHERE article_number = ?
+                    factory = %s, sports_category = %s, article_name = %s, model = %s,
+                    pre_confirm_date = %s, leading_buy_ready_date = %s,
+                    product_weight = %s, lifecycle_state = %s, updated_at = %s
+                WHERE article_number = %s
             ''', (
                 str(row.get('Factory', '')),
                 str(row.get('Sports Category', '')),
@@ -187,7 +187,7 @@ def save_to_db(df_new):
     deleted = 0
     for old_article in existing_articles.keys():
         if old_article not in new_article_numbers:
-            cursor.execute("DELETE FROM articles WHERE article_number = ?", (old_article,))
+            cursor.execute("DELETE FROM articles WHERE article_number = %s", (old_article,))
             deleted += 1
     
     conn.commit()
@@ -211,7 +211,7 @@ def save_drop_to_db(df_new):
             skipped += 1
             continue
         
-        cursor.execute("SELECT id FROM drop_articles WHERE season = ? AND article_number = ?", (season, article_number))
+        cursor.execute("SELECT id FROM drop_articles WHERE season = %s AND article_number = %s", (season, article_number))
         existing = cursor.fetchone()
         
         now = datetime.now().isoformat()
@@ -219,8 +219,8 @@ def save_drop_to_db(df_new):
         if existing:
             cursor.execute('''
                 UPDATE drop_articles SET
-                    factory = ?, sports_category = ?, article_name = ?, model = ?, updated_at = ?
-                WHERE season = ? AND article_number = ?
+                    factory = %s, sports_category = %s, article_name = %s, model = %s, updated_at = %s
+                WHERE season = %s AND article_number = %s
             ''', (
                 str(row.get('Factory', '')),
                 str(row.get('Sports Category', '')),
@@ -232,7 +232,7 @@ def save_drop_to_db(df_new):
         else:
             cursor.execute('''
                 INSERT INTO drop_articles (season, factory, sports_category, article_name, model, article_number, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 season,
                 str(row.get('Factory', '')),
@@ -257,8 +257,8 @@ def update_all_statuses(df):
         article_number = str(row.get('Article NUMBER', '')).strip()
         if article_number and article_number != 'nan':
             cursor.execute('''
-                UPDATE articles SET mcs_status = ?, fgt_status = ?, ft_status = ?, wt_status = ?, updated_at = ?
-                WHERE article_number = ?
+                UPDATE articles SET mcs_status = %s, fgt_status = %s, ft_status = %s, wt_status = %s, updated_at = %s
+                WHERE article_number = %s
             ''', (
                 str(row.get('MCS status', '')),
                 str(row.get('FGT status', '')),
