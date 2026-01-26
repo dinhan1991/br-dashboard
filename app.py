@@ -854,31 +854,32 @@ if len(br_data) > 0:
         hide_index=True, height=400, key="br_editor"
     )
     
-    # Action buttons
-    col_btn1, col_btn2 = st.columns([1, 4])
-    with col_btn1:
-        if st.button("💾 Lưu Status", type="primary", key="save_br"):
-            update_all_statuses(edited_df)
-            st.success("✅ Đã lưu!")
-            st.rerun()
-    with col_btn2:
-        # Download BR data
-        @st.cache_data
-        def convert_br_to_excel(df):
-            from io import BytesIO
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Buy Ready')
-            return output.getvalue()
-        
-        br_excel = convert_br_to_excel(edited_df)
-        st.download_button(
-            label="📥 Tải xuống BR",
-            data=br_excel,
-            file_name=f"buy_ready_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_br"
-        )
+    # Auto-save: detect changes and save automatically
+    if not edited_df.equals(df_br_filtered):
+        # Changes detected, auto-save to database
+        update_all_statuses(edited_df)
+        st.success("✅ Tự động lưu thành công!")
+        import time
+        time.sleep(0.5)  # Brief delay to show success message
+        st.rerun()
+    
+    # Download button
+    @st.cache_data
+    def convert_br_to_excel(df):
+        from io import BytesIO
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Buy Ready')
+        return output.getvalue()
+    
+    br_excel = convert_br_to_excel(edited_df)
+    st.download_button(
+        label="📥 Tải xuống BR",
+        data=br_excel,
+        file_name=f"buy_ready_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_br"
+    )
 
 # ==================== DROP SECTION (Always show) ====================
 st.markdown("---")
