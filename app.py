@@ -77,6 +77,7 @@ def init_db():
     cursor.close()
     conn.close()
 
+@st.cache_data(ttl=60)  # Cache for 60 seconds
 def load_from_db():
     """Load Buy Ready data from database"""
     conn = get_db_connection()
@@ -84,12 +85,9 @@ def load_from_db():
     conn.close()
     return df
 
+@st.cache_data(ttl=60)  # Cache for 60 seconds
 def load_drop_from_db():
     """Load Drop Report data from database"""
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM drop_articles ORDER BY season, sports_category", conn)
-    conn.close()
-    return df
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM drop_articles ORDER BY season, sports_category", conn)
     conn.close()
@@ -820,6 +818,7 @@ if len(br_data) > 0:
     <div class="stat-label">{factory}</div>
 </div>''', unsafe_allow_html=True)
     
+    
     # ==================== TABLE SECTION ====================
     st.markdown("#### 📋 Bảng dữ liệu")
     
@@ -831,55 +830,62 @@ if len(br_data) > 0:
         df_br_filtered = df_br_filtered.reset_index(drop=True)
         df_br_filtered['STT'] = range(1, len(df_br_filtered) + 1)
     
-    edited_df = st.data_editor(
-        df_br_filtered, use_container_width=True, num_rows="fixed",
-        column_config={
-            "STT": st.column_config.NumberColumn("STT", disabled=True, width="small"),
-            "Change": st.column_config.TextColumn("Change", disabled=True, width="small"),
-            "Factory": st.column_config.TextColumn("Factory", disabled=True),
-            "Sports Category": st.column_config.TextColumn("Sports Category", disabled=True),
-            "Lifecycle State": st.column_config.TextColumn("Lifecycle State", disabled=True),
-            "Article NAME": st.column_config.TextColumn("Article NAME", disabled=True),
-            "Model": st.column_config.TextColumn("Model", disabled=True),
-            "Article NUMBER": st.column_config.TextColumn("Article NUMBER", disabled=True),
-            "Pre-Confirm Date": st.column_config.DateColumn("Pre-Confirm Date", disabled=True),
-            "Leading Buy Ready Date": st.column_config.DateColumn("Leading Buy Ready Date", disabled=True),
-            "Product Weight": st.column_config.TextColumn("Product Weight", disabled=True),
-            "MCS status": st.column_config.TextColumn("MCS status"),
-            "FGT status": st.column_config.TextColumn("FGT status"),
-            "FT status": st.column_config.TextColumn("FT status"),
-            "WT status": st.column_config.TextColumn("WT status"),
-            "Status": st.column_config.TextColumn("Status", disabled=True),
-        },
-        hide_index=True, height=400, key="br_editor"
-    )
-    
-    # Manual save with scroll position preservation
-    col_btn1, col_btn2 = st.columns([1, 4])
-    with col_btn1:
-        if st.button("💾 Lưu Status", type="primary", key="save_br"):
-            update_all_statuses(edited_df)
-            st.success("✅ Đã lưu! (Giữ nguyên vị trí)")
-            # No st.rerun() to preserve scroll position
-    
-    with col_btn2:
-        # Download BR data
-        @st.cache_data
-        def convert_br_to_excel(df):
-            from io import BytesIO
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Buy Ready')
-            return output.getvalue()
-        
-        br_excel = convert_br_to_excel(edited_df)
-        st.download_button(
-            label="📥 Tải xuống BR",
-            data=br_excel,
-            file_name=f"buy_ready_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_br"
+    # Fragment to isolate data_editor reruns (performance optimization)
+    @st.fragment
+    def render_editable_table(df_filtered):
+        """Render data editor in isolated fragment to prevent full app rerun"""
+        edited_df = st.data_editor(
+            df_filtered, use_container_width=True, num_rows="fixed",
+            column_config={
+                "STT": st.column_config.NumberColumn("STT", disabled=True, width="small"),
+                "Change": st.column_config.TextColumn("Change", disabled=True, width="small"),
+                "Factory": st.column_config.TextColumn("Factory", disabled=True),
+                "Sports Category": st.column_config.TextColumn("Sports Category", disabled=True),
+                "Lifecycle State": st.column_config.TextColumn("Lifecycle State", disabled=True),
+                "Article NAME": st.column_config.TextColumn("Article NAME", disabled=True),
+                "Model": st.column_config.TextColumn("Model", disabled=True),
+                "Article NUMBER": st.column_config.TextColumn("Article NUMBER", disabled=True),
+                "Pre-Confirm Date": st.column_config.DateColumn("Pre-Confirm Date", disabled=True),
+                "Leading Buy Ready Date": st.column_config.DateColumn("Leading Buy Ready Date", disabled=True),
+                "Product Weight": st.column_config.TextColumn("Product Weight", disabled=True),
+                "MCS status": st.column_config.TextColumn("MCS status"),
+                "FGT status": st.column_config.TextColumn("FGT status"),
+                "FT status": st.column_config.TextColumn("FT status"),
+                "WT status": st.column_config.TextColumn("WT status"),
+                "Status": st.column_config.TextColumn("Status", disabled=True),
+            },
+            hide_index=True, height=400, key="br_editor"
         )
+        
+        # Manual save with scroll position preservation
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            if st.button("💾 Lưu Status", type="primary", key="save_br"):
+                update_all_statuses(edited_df)
+                st.success("✅ Đã lưu! (Giữ nguyên vị trí)")
+                # No st.rerun() to preserve scroll position
+        
+        with col_btn2:
+            # Download BR data
+            @st.cache_data
+            def convert_br_to_excel(df):
+                from io import BytesIO
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Buy Ready')
+                return output.getvalue()
+            
+            br_excel = convert_br_to_excel(edited_df)
+            st.download_button(
+                label="📥 Tải xuống BR",
+                data=br_excel,
+                file_name=f"buy_ready_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_br"
+            )
+    
+    # Render the fragment
+    render_editable_table(df_br_filtered)
 
 # ==================== DROP SECTION (Always show) ====================
 st.markdown("---")
