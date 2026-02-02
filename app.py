@@ -594,9 +594,44 @@ with st.sidebar:
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     if len(archived_br) > 0:
-                        archived_br.to_excel(writer, sheet_name='BR Archive', index=False)
+                        # Format BR columns to match original upload
+                        br_export = archived_br.rename(columns={
+                            'factory': 'Factory',
+                            'sports_category': 'Sports Category',
+                            'article_name': 'Article NAME',
+                            'model': 'Model',
+                            'article_number': 'Article NUMBER',
+                            'leading_buy_ready_date': 'Leading Buy Ready Date',
+                            'mcs_status': 'MCS status',
+                            'fgt_status': 'FGT status',
+                            'ft_status': 'FT status',
+                            'wt_status': 'WT status',
+                            'archived_at': 'Archived At'
+                        })
+                        # Select only relevant columns
+                        br_cols = ['Factory', 'Sports Category', 'Article NAME', 'Model', 
+                                   'Article NUMBER', 'Leading Buy Ready Date', 'MCS status', 
+                                   'FGT status', 'FT status', 'WT status', 'Archived At']
+                        br_export = br_export[[c for c in br_cols if c in br_export.columns]]
+                        br_export.to_excel(writer, sheet_name='BR Archive', index=False)
+                    
                     if len(archived_drop) > 0:
-                        archived_drop.to_excel(writer, sheet_name='DROP Archive', index=False)
+                        # Format DROP columns to match original upload
+                        drop_export = archived_drop.rename(columns={
+                            'season': 'Season',
+                            'factory': 'Factory',
+                            'sports_category': 'Sports Category',
+                            'article_name': 'Article NAME',
+                            'model': 'Model',
+                            'article_number': 'Article NUMBER',
+                            'archived_at': 'Archived At'
+                        })
+                        # Select only relevant columns
+                        drop_cols = ['Season', 'Factory', 'Sports Category', 'Article NAME', 
+                                     'Model', 'Article NUMBER', 'Archived At']
+                        drop_export = drop_export[[c for c in drop_cols if c in drop_export.columns]]
+                        drop_export.to_excel(writer, sheet_name='DROP Archive', index=False)
+                
                 output.seek(0)
                 st.download_button(
                     label="⬇️ Download Archive.xlsx",
