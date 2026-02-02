@@ -4,7 +4,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime
-import plotly.express as px
 import plotly.graph_objects as go
 
 # Page configuration
@@ -388,7 +387,7 @@ with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 1rem;">
             <h2 style="color: #667eea; margin: 0;">🏈 BR Tracking</h2>
-            <span class="version-tag">v3.0</span>
+            <span class="version-tag">v3.1</span>
         </div>
     """, unsafe_allow_html=True)
     
@@ -574,8 +573,8 @@ if uploaded_file is not None:
         col_weight = find_column(df, ['Product Weight', 'ProductWeight'])
         col_lifecycle = find_column(df, ['Article Season Lifecycle State', 'Lifecycle State', 'Season Lifecycle State'])
         
-        # Allowed factories
-        ALLOWED_FACTORIES = ['HWA', 'SPG']
+        # Allowed factories (HWA only - matches global constant)
+        ALLOWED_FACTORIES = ['HWA']
         
         if col_sports and col_article_number:
             df[col_sports] = df[col_sports].astype(str).str.upper().str.strip()
