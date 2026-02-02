@@ -386,7 +386,7 @@ with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 1rem;">
             <h2 style="color: #667eea; margin: 0;">🏈 BR Tracking</h2>
-            <span class="version-tag">v2.0</span>
+            <span class="version-tag">v3.0</span>
         </div>
     """, unsafe_allow_html=True)
     
@@ -407,40 +407,56 @@ with st.sidebar:
             <h4 style="color: #e2e8f0; margin: 0 0 0.5rem 0;">🔍 Auto Filter</h4>
             <p style="color: #a0aec0; margin: 0; font-size: 0.9rem;">
                 <strong>Sports:</strong> AM.Football, Baseball, Softball<br>
-                <strong>Factory:</strong> HWA, SPG
+                <strong>Factory:</strong> HWA Only
             </p>
         </div>
     """, unsafe_allow_html=True)
     
     st.markdown("---")
     
-    # Database stats
+    # Database stats - V3 Design
     br_data = load_from_db()
     drop_data = load_drop_from_db()
     
     st.markdown("""
         <div class="sidebar-info">
-            <h4 style="color: #e2e8f0; margin: 0 0 0.5rem 0;">💾 Database</h4>
+            <h4 style="color: #e2e8f0; margin: 0 0 1rem 0;">💾 Database</h4>
         </div>
     """, unsafe_allow_html=True)
     
-    # Factory breakdown for BR
-    if len(br_data) > 0 and 'factory' in br_data.columns:
-        factory_counts = br_data['factory'].value_counts()
-        for factory, count in factory_counts.items():
-            if factory and str(factory) != 'nan':
-                st.markdown(f"""
-                    <div class="factory-card">
-                        <span class="factory-name">🏭 {factory}</span>
-                        <span class="factory-count">{count}</span>
-                    </div>
-                """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("📦 BR", len(br_data))
-    with col2:
-        st.metric("📉 Drop", len(drop_data))
+    # Modern stat cards for BR and DROP
+    st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="color: #e2e8f0; font-size: 0.85rem; margin-bottom: 0.25rem;">📦 Buy Ready</div>
+                    <div style="color: white; font-size: 2rem; font-weight: 700;">{len(br_data)}</div>
+                </div>
+                <div style="font-size: 2.5rem; opacity: 0.3;">📦</div>
+            </div>
+        </div>
+        
+        <div style="
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="color: #e2e8f0; font-size: 0.85rem; margin-bottom: 0.25rem;">📉 Drop Report</div>
+                    <div style="color: white; font-size: 2rem; font-weight: 700;">{len(drop_data)}</div>
+                </div>
+                <div style="font-size: 2.5rem; opacity: 0.3;">📉</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("---")
     
