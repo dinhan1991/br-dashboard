@@ -893,10 +893,7 @@ if len(br_data) > 0:
                         showgrid=False,
                         title=''
                     ),
-                    yaxis=dict(
-                        showgrid=False,
-                        title=''
-                    ),
+
                     height=350,
                     margin=dict(t=30, b=40, l=150, r=20),
                     showlegend=False
