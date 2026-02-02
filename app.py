@@ -734,7 +734,7 @@ if len(br_data) > 0:
     with col_f3:
         search_query = st.text_input("🔍 Tìm kiếm Article", placeholder="Nhập Article NAME hoặc NUMBER...", key='br_search')
     with col_f4:
-        status_opts = ['-- Tất cả --', '✅ PASSED', '⏳ Chưa có', '🔴 PENDING', '🔄 Processing']
+        status_opts = ['-- Tất cả --', 'PASSED', 'NOT YET UPDATED', 'PENDING', 'Processing']
         selected_status = st.selectbox("📊 Overall Status", status_opts, key='br_status')
     
     st.markdown("---")
@@ -748,18 +748,18 @@ if len(br_data) > 0:
         
         # Check if all empty
         if mcs == '' and fgt == '' and ft == '' and wt == '':
-            return '⏳ Chưa có'
+            return 'NOT YET UPDATED'
         
         # Check if any PENDING, ETD, or SENT
         all_statuses = mcs + ' ' + fgt + ' ' + ft + ' ' + wt
         if 'PENDING' in all_statuses or 'ETD' in all_statuses or 'SENT' in all_statuses:
-            return '🔴 PENDING'
+            return 'PENDING'
         
         # Check if PASSED
         if mcs == 'APPROVED' and fgt == 'PASSED':
-            return '✅ PASSED'
+            return 'PASSED'
         
-        return '🔄 Processing'
+        return 'Processing'
     
     df_br['Status'] = df_br.apply(get_overall_status, axis=1)
     
@@ -797,10 +797,10 @@ if len(br_data) > 0:
                 
                 # Define colors matching V3 theme
                 color_map = {
-                    '✅ PASSED': '#10b981',      # green
-                    '🔄 Processing': '#667eea',   # purple
-                    '🔴 PENDING': '#f5576c',      # red
-                    '⏳ Chưa có': '#a0aec0'       # gray
+                    'PASSED': '#10b981',          # green
+                    'Processing': '#667eea',       # purple
+                    'PENDING': '#f59e0b',          # yellow
+                    'NOT YET UPDATED': '#a0aec0'   # gray
                 }
                 
                 colors = [color_map.get(status, '#a0aec0') for status in status_counts.index]
