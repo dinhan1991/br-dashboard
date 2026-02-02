@@ -274,6 +274,9 @@ init_db()
 # Sports categories
 ALLOWED_SPORTS = ['AMERICAN FOOTBALL', 'BASEBALL', 'SOFTBALL']
 
+# Allowed factories (HWA only)
+ALLOWED_FACTORIES = ['HWA']
+
 # Helper functions
 def find_column(df, possible_names):
     df_columns_lower = {col.lower().strip(): col for col in df.columns}
@@ -592,7 +595,7 @@ if uploaded_file is not None:
                     msg += f"\n\n📅 **Date thay đổi:** {', '.join(changed_articles[:10])}" + ("..." if len(changed_articles) > 10 else "")
                 st.success(msg)
             else:
-                st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA, SPG)")
+                st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
     
     elif file_type == 'drop_report':
         # Get all sheet names
@@ -783,19 +786,13 @@ if len(br_data) > 0:
     if len(factory_counts) > 0:
         st.markdown("#### 🏭 Thống kê theo Factory")
         
-        # Load logos as base64
+        # Load HWA logo
         logo_hwa_path = os.path.join(os.path.dirname(__file__), 'logo_hwa.png')
-        logo_spg_path = os.path.join(os.path.dirname(__file__), 'logo_spg.png')
-        
         logo_hwa_b64 = ""
-        logo_spg_b64 = ""
         
         if os.path.exists(logo_hwa_path):
             with open(logo_hwa_path, "rb") as f:
                 logo_hwa_b64 = base64.b64encode(f.read()).decode()
-        if os.path.exists(logo_spg_path):
-            with open(logo_spg_path, "rb") as f:
-                logo_spg_b64 = base64.b64encode(f.read()).decode()
         
         factory_cols = st.columns(len(factory_counts))
         for i, (factory, count) in enumerate(factory_counts.items()):
@@ -804,9 +801,6 @@ if len(br_data) > 0:
                     if factory == "HWA" and logo_hwa_b64:
                         logo_img = f'<img src="data:image/png;base64,{logo_hwa_b64}" style="height: 50px; margin-bottom: 10px; background: white; padding: 5px; border-radius: 8px;">'
                         color = "#4facfe"
-                    elif factory == "SPG" and logo_spg_b64:
-                        logo_img = f'<img src="data:image/png;base64,{logo_spg_b64}" style="height: 50px; margin-bottom: 10px; background: white; padding: 5px; border-radius: 8px;">'
-                        color = "#2ecc71"
                     else:
                         logo_img = '<div style="font-size: 2rem; margin-bottom: 10px;">🏭</div>'
                         color = "#667eea"
