@@ -698,27 +698,29 @@ if len(br_data) > 0:
     df_br = df_br.reset_index(drop=True)
     df_br.insert(0, 'STT', range(1, len(df_br) + 1))
     
-    # Filters - 3 columns: Factory, Sports, Date
-    col_f1, col_f2, col_f3 = st.columns(3)
+    # Filters - Reorganized 2x2 layout (Factory removed - HWA only)
+    st.markdown("#### 🔍 Bộ lọc")
+    
+    # Row 1: Sports + Date
+    col_f1, col_f2 = st.columns(2)
     with col_f1:
-        factory_list = sorted([f for f in df_br['Factory'].unique().tolist() if f and f != 'nan'])
-        selected_factory = st.selectbox("🏭 Factory", ['-- Tất cả --'] + factory_list, key='br_factory')
-    with col_f2:
         sports_list = df_br['Sports Category'].unique().tolist()
-        selected_sport = st.selectbox("🏈 Sports", ['-- Tất cả --'] + sports_list, key='br_sport')
-    with col_f3:
+        selected_sport = st.selectbox("🏈 Sports Category", ['-- Tất cả --'] + sports_list, key='br_sport')
+    with col_f2:
         dates = df_br['Leading Buy Ready Date'].dropna().dt.date.unique()
         dates_sorted = sorted(dates) if len(dates) > 0 else []
         date_opts = ['-- Tất cả --'] + [str(d) for d in dates_sorted]
-        selected_date = st.selectbox("📅 Date", date_opts, key='br_date')
+        selected_date = st.selectbox("📅 Leading Buy Ready Date", date_opts, key='br_date')
     
-    # Search box
-    col_search, col_status = st.columns([3, 1])
-    with col_search:
+    # Row 2: Search + Status
+    col_f3, col_f4 = st.columns(2)
+    with col_f3:
         search_query = st.text_input("🔍 Tìm kiếm Article", placeholder="Nhập Article NAME hoặc NUMBER...", key='br_search')
-    with col_status:
+    with col_f4:
         status_opts = ['-- Tất cả --', '✅ PASSED', '⏳ Chưa có', '🔴 PENDING', '🔄 Processing']
-        selected_status = st.selectbox("📊 Status", status_opts, key='br_status')
+        selected_status = st.selectbox("📊 Overall Status", status_opts, key='br_status')
+    
+    st.markdown("---")
     
     # Calculate Overall Status first (before filtering)
     def get_overall_status(row):
@@ -744,9 +746,8 @@ if len(br_data) > 0:
     
     df_br['Status'] = df_br.apply(get_overall_status, axis=1)
     
+    # Apply filters (Factory filter removed)
     df_br_filtered = df_br.copy()
-    if selected_factory != '-- Tất cả --':
-        df_br_filtered = df_br_filtered[df_br_filtered['Factory'] == selected_factory]
     if selected_sport != '-- Tất cả --':
         df_br_filtered = df_br_filtered[df_br_filtered['Sports Category'] == selected_sport]
     if selected_date != '-- Tất cả --':
