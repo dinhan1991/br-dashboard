@@ -485,7 +485,7 @@ with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 1rem;">
             <h2 style="color: #667eea; margin: 0;">🏈 BR Tracking</h2>
-            <span class="version-tag">v3.1</span>
+            <span class="version-tag">v3.2</span>
         </div>
     """, unsafe_allow_html=True)
     
