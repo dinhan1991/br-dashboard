@@ -836,28 +836,48 @@ if len(br_data) > 0:
             
             # Chart 2: Timeline by Date (Line)
             with col_chart2:
-                st.markdown("##### 📅 Timeline by Date")
+                st.markdown("##### 📅 Timeline by Sports")
                 
-                # Group by date
-                timeline_data = df_br_filtered.groupby(
-                    df_br_filtered['Leading Buy Ready Date'].dt.date
-                ).size().reset_index(name='count')
-                timeline_data.columns = ['date', 'count']
-                timeline_data = timeline_data.sort_values('date')
+                # Create Dugout category (Baseball + Softball)
+                df_timeline = df_br_filtered.copy()
+                df_timeline['Sport Group'] = df_timeline['Sports Category'].apply(
+                    lambda x: 'American Football' if x == 'AMERICAN FOOTBALL' else 'Dugout'
+                )
+                
+                # Group by date and sport
+                timeline_grouped = df_timeline.groupby([
+                    df_timeline['Leading Buy Ready Date'].dt.date,
+                    'Sport Group'
+                ]).size().reset_index(name='count')
+                timeline_grouped.columns = ['date', 'sport', 'count']
                 
                 fig_timeline = go.Figure()
                 
-                fig_timeline.add_trace(go.Scatter(
-                    x=timeline_data['date'],
-                    y=timeline_data['count'],
-                    mode='lines+markers',
-                    name='Articles',
-                    line=dict(color='#667eea', width=3),
-                    marker=dict(size=8, color='#764ba2'),
-                    fill='tozeroy',
-                    fillcolor='rgba(102, 126, 234, 0.2)',
-                    hovertemplate='<b>%{x}</b><br>Articles: %{y}<extra></extra>'
-                ))
+                # American Football line
+                af_data = timeline_grouped[timeline_grouped['sport'] == 'American Football'].sort_values('date')
+                if len(af_data) > 0:
+                    fig_timeline.add_trace(go.Scatter(
+                        x=af_data['date'],
+                        y=af_data['count'],
+                        mode='lines+markers',
+                        name='🏈 Am. Football',
+                        line=dict(color='#f5576c', width=3),
+                        marker=dict(size=8, color='#f5576c'),
+                        hovertemplate='<b>%{x}</b><br>Am. Football: %{y}<extra></extra>'
+                    ))
+                
+                # Dugout line (Baseball + Softball)
+                dugout_data = timeline_grouped[timeline_grouped['sport'] == 'Dugout'].sort_values('date')
+                if len(dugout_data) > 0:
+                    fig_timeline.add_trace(go.Scatter(
+                        x=dugout_data['date'],
+                        y=dugout_data['count'],
+                        mode='lines+markers',
+                        name='⚾ Dugout',
+                        line=dict(color='#38ef7d', width=3),
+                        marker=dict(size=8, color='#38ef7d'),
+                        hovertemplate='<b>%{x}</b><br>Dugout: %{y}<extra></extra>'
+                    ))
                 
                 fig_timeline.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)',
@@ -866,13 +886,13 @@ if len(br_data) > 0:
                     xaxis=dict(
                         showgrid=True,
                         gridcolor='rgba(160, 174, 192, 0.1)',
-                        title='Date',
+                        title='Leading Buy Ready Date',
                         tickangle=-45
                     ),
                     yaxis=dict(
                         showgrid=True,
                         gridcolor='rgba(160, 174, 192, 0.1)',
-                        title='Count',
+                        title='Article Count',
                         tickmode='linear',
                         dtick=1
                     ),
