@@ -834,74 +834,75 @@ if len(br_data) > 0:
                 
                 st.plotly_chart(fig_status, use_container_width=True)
             
-            # Chart 2: Timeline by Date (Line)
+            # Chart 2: Sports Count Breakdown (Bar Chart)
             with col_chart2:
-                st.markdown("##### 📅 Timeline by Sports")
+                st.markdown("##### 📊 Sports Count Breakdown")
                 
                 # Create Dugout category (Baseball + Softball)
-                df_timeline = df_br_filtered.copy()
-                df_timeline['Sport Group'] = df_timeline['Sports Category'].apply(
+                df_sports = df_br_filtered.copy()
+                df_sports['Sport Group'] = df_sports['Sports Category'].apply(
                     lambda x: 'American Football' if x == 'AMERICAN FOOTBALL' else 'Dugout'
                 )
                 
-                # Group by date and sport
-                timeline_grouped = df_timeline.groupby([
-                    df_timeline['Leading Buy Ready Date'].dt.date,
-                    'Sport Group'
-                ]).size().reset_index(name='count')
-                timeline_grouped.columns = ['date', 'sport', 'count']
+                # Count by sport
+                sports_counts = df_sports['Sport Group'].value_counts()
                 
-                fig_timeline = go.Figure()
+                # Prepare data
+                sports = []
+                counts = []
+                colors = []
                 
-                # American Football line
-                af_data = timeline_grouped[timeline_grouped['sport'] == 'American Football'].sort_values('date')
-                if len(af_data) > 0:
-                    fig_timeline.add_trace(go.Scatter(
-                        x=af_data['date'],
-                        y=af_data['count'],
-                        mode='lines+markers',
-                        name='🏈 Am. Football',
-                        line=dict(color='#f5576c', width=3),
-                        marker=dict(size=8, color='#f5576c'),
-                        hovertemplate='<b>%{x}</b><br>Am. Football: %{y}<extra></extra>'
-                    ))
+                if 'American Football' in sports_counts.index:
+                    sports.append('🏈 American Football')
+                    counts.append(sports_counts['American Football'])
+                    colors.append('#f5576c')
                 
-                # Dugout line (Baseball + Softball)
-                dugout_data = timeline_grouped[timeline_grouped['sport'] == 'Dugout'].sort_values('date')
-                if len(dugout_data) > 0:
-                    fig_timeline.add_trace(go.Scatter(
-                        x=dugout_data['date'],
-                        y=dugout_data['count'],
-                        mode='lines+markers',
-                        name='⚾ Dugout',
-                        line=dict(color='#38ef7d', width=3),
-                        marker=dict(size=8, color='#38ef7d'),
-                        hovertemplate='<b>%{x}</b><br>Dugout: %{y}<extra></extra>'
-                    ))
+                if 'Dugout' in sports_counts.index:
+                    sports.append('⚾ Dugout')
+                    counts.append(sports_counts['Dugout'])
+                    colors.append('#38ef7d')
                 
-                fig_timeline.update_layout(
+                fig_sports = go.Figure()
+                
+                fig_sports.add_trace(go.Bar(
+                    y=sports,
+                    x=counts,
+                    orientation='h',
+                    marker=dict(
+                        color=colors,
+                        line=dict(color='#1a1a2e', width=2)
+                    ),
+                    text=counts,
+                    textposition='auto',
+                    textfont=dict(size=16, color='white', family='Arial Black'),
+                    hovertemplate='<b>%{y}</b><br>Total Articles: %{x}<extra></extra>'
+                ))
+                
+                fig_sports.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(color='#e2e8f0'),
                     xaxis=dict(
                         showgrid=True,
                         gridcolor='rgba(160, 174, 192, 0.1)',
-                        title='Leading Buy Ready Date',
-                        tickangle=-45
-                    ),
-                    yaxis=dict(
-                        showgrid=True,
-                        gridcolor='rgba(160, 174, 192, 0.1)',
                         title='Article Count',
                         tickmode='linear',
                         dtick=1
                     ),
+                    yaxis=dict(
+                        showgrid=False,
+                        title=''
+                    ),
+                    yaxis=dict(
+                        showgrid=False,
+                        title=''
+                    ),
                     height=350,
-                    margin=dict(t=30, b=80, l=40, r=20),
-                    hovermode='x unified'
+                    margin=dict(t=30, b=40, l=150, r=20),
+                    showlegend=False
                 )
                 
-                st.plotly_chart(fig_timeline, use_container_width=True)
+                st.plotly_chart(fig_sports, use_container_width=True)
         else:
             st.info("📊 No data available for analytics. Upload a file or adjust filters.")
     
