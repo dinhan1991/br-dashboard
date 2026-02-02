@@ -834,54 +834,64 @@ if len(br_data) > 0:
                 
                 st.plotly_chart(fig_status, use_container_width=True)
             
-            # Chart 2: Sports Count Breakdown (Bar Chart)
+            # Chart 2: Article Count by Date & Sport (Grouped Bar)
             with col_chart2:
-                st.markdown("##### 📊 Sports Count Breakdown")
+                st.markdown("##### 📅 Articles by Date & Sport")
                 
                 # Create Dugout category (Baseball + Softball)
-                df_sports = df_br_filtered.copy()
-                df_sports['Sport Group'] = df_sports['Sports Category'].apply(
+                df_timeline = df_br_filtered.copy()
+                df_timeline['Sport Group'] = df_timeline['Sports Category'].apply(
                     lambda x: 'American Football' if x == 'AMERICAN FOOTBALL' else 'Dugout'
                 )
                 
-                # Count by sport
-                sports_counts = df_sports['Sport Group'].value_counts()
+                # Group by date and sport
+                timeline_grouped = df_timeline.groupby([
+                    df_timeline['Leading Buy Ready Date'].dt.date,
+                    'Sport Group'
+                ]).size().reset_index(name='count')
+                timeline_grouped.columns = ['date', 'sport', 'count']
+                timeline_grouped = timeline_grouped.sort_values('date')
                 
-                # Prepare data
-                sports = []
-                counts = []
-                colors = []
+                # Get unique dates sorted
+                unique_dates = sorted(timeline_grouped['date'].unique())
                 
-                if 'American Football' in sports_counts.index:
-                    sports.append('🏈 American Football')
-                    counts.append(sports_counts['American Football'])
-                    colors.append('#f5576c')
+                fig_grouped = go.Figure()
                 
-                if 'Dugout' in sports_counts.index:
-                    sports.append('⚾ Dugout')
-                    counts.append(sports_counts['Dugout'])
-                    colors.append('#38ef7d')
+                # American Football bars
+                af_data = timeline_grouped[timeline_grouped['sport'] == 'American Football']
+                if len(af_data) > 0:
+                    fig_grouped.add_trace(go.Bar(
+                        y=[str(d) for d in af_data['date']],
+                        x=af_data['count'],
+                        name='🏈 Am. Football',
+                        orientation='h',
+                        marker=dict(color='#f5576c', line=dict(color='#1a1a2e', width=1)),
+                        text=af_data['count'],
+                        textposition='auto',
+                        textfont=dict(size=12, color='white'),
+                        hovertemplate='<b>Am. Football</b><br>%{y}<br>Count: %{x}<extra></extra>'
+                    ))
                 
-                fig_sports = go.Figure()
+                # Dugout bars
+                dugout_data = timeline_grouped[timeline_grouped['sport'] == 'Dugout']
+                if len(dugout_data) > 0:
+                    fig_grouped.add_trace(go.Bar(
+                        y=[str(d) for d in dugout_data['date']],
+                        x=dugout_data['count'],
+                        name='⚾ Dugout',
+                        orientation='h',
+                        marker=dict(color='#38ef7d', line=dict(color='#1a1a2e', width=1)),
+                        text=dugout_data['count'],
+                        textposition='auto',
+                        textfont=dict(size=12, color='white'),
+                        hovertemplate='<b>Dugout</b><br>%{y}<br>Count: %{x}<extra></extra>'
+                    ))
                 
-                fig_sports.add_trace(go.Bar(
-                    y=sports,
-                    x=counts,
-                    orientation='h',
-                    marker=dict(
-                        color=colors,
-                        line=dict(color='#1a1a2e', width=2)
-                    ),
-                    text=counts,
-                    textposition='auto',
-                    textfont=dict(size=16, color='white', family='Arial Black'),
-                    hovertemplate='<b>%{y}</b><br>Total Articles: %{x}<extra></extra>'
-                ))
-                
-                fig_sports.update_layout(
+                fig_grouped.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(color='#e2e8f0'),
+                    barmode='group',  # Group bars side by side
                     xaxis=dict(
                         showgrid=True,
                         gridcolor='rgba(160, 174, 192, 0.1)',
@@ -891,15 +901,21 @@ if len(br_data) > 0:
                     ),
                     yaxis=dict(
                         showgrid=False,
-                        title=''
+                        title='Buy Ready Date',
+                        categoryorder='category ascending'
                     ),
-
-                    height=350,
-                    margin=dict(t=30, b=40, l=150, r=20),
-                    showlegend=False
+                    height=400,
+                    margin=dict(t=30, b=40, l=100, r=20),
+                    legend=dict(
+                        orientation='h',
+                        yanchor='bottom',
+                        y=1.02,
+                        xanchor='center',
+                        x=0.5
+                    )
                 )
                 
-                st.plotly_chart(fig_sports, use_container_width=True)
+                st.plotly_chart(fig_grouped, use_container_width=True)
         else:
             st.info("📊 No data available for analytics. Upload a file or adjust filters.")
     
