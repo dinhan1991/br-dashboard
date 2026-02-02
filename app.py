@@ -4,6 +4,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime
+import plotly.express as px
+import plotly.graph_objects as go
 
 # Page configuration
 st.set_page_config(
@@ -783,6 +785,107 @@ if len(br_data) > 0:
     
     df_br_filtered = df_br_filtered.reset_index(drop=True)
     df_br_filtered['STT'] = range(1, len(df_br_filtered) + 1)
+    
+    # ==================== ANALYTICS SECTION (V3.1) ====================
+    with st.expander("📊 Analytics Dashboard", expanded=True):
+        if len(df_br_filtered) > 0:
+            col_chart1, col_chart2 = st.columns(2)
+            
+            # Chart 1: Status Distribution (Donut)
+            with col_chart1:
+                st.markdown("##### 📈 Status Distribution")
+                status_counts = df_br_filtered['Status'].value_counts()
+                
+                # Define colors matching V3 theme
+                color_map = {
+                    '✅ PASSED': '#10b981',      # green
+                    '🔄 Processing': '#667eea',   # purple
+                    '🔴 PENDING': '#f5576c',      # red
+                    '⏳ Chưa có': '#a0aec0'       # gray
+                }
+                
+                colors = [color_map.get(status, '#a0aec0') for status in status_counts.index]
+                
+                fig_status = go.Figure(data=[go.Pie(
+                    labels=status_counts.index,
+                    values=status_counts.values,
+                    hole=0.5,  # Donut chart
+                    marker=dict(colors=colors, line=dict(color='#1a1a2e', width=2)),
+                    textfont=dict(size=14, color='white'),
+                    hovertemplate='<b>%{label}</b><br>Count: %{value}<br>%{percent}<extra></extra>'
+                )])
+                
+                fig_status.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#e2e8f0'),
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.2,
+                        xanchor="center",
+                        x=0.5,
+                        font=dict(size=12)
+                    ),
+                    height=350,
+                    margin=dict(t=30, b=20, l=20, r=20)
+                )
+                
+                st.plotly_chart(fig_status, use_container_width=True)
+            
+            # Chart 2: Timeline by Date (Line)
+            with col_chart2:
+                st.markdown("##### 📅 Timeline by Date")
+                
+                # Group by date
+                timeline_data = df_br_filtered.groupby(
+                    df_br_filtered['Leading Buy Ready Date'].dt.date
+                ).size().reset_index(name='count')
+                timeline_data.columns = ['date', 'count']
+                timeline_data = timeline_data.sort_values('date')
+                
+                fig_timeline = go.Figure()
+                
+                fig_timeline.add_trace(go.Scatter(
+                    x=timeline_data['date'],
+                    y=timeline_data['count'],
+                    mode='lines+markers',
+                    name='Articles',
+                    line=dict(color='#667eea', width=3),
+                    marker=dict(size=8, color='#764ba2'),
+                    fill='tozeroy',
+                    fillcolor='rgba(102, 126, 234, 0.2)',
+                    hovertemplate='<b>%{x}</b><br>Articles: %{y}<extra></extra>'
+                ))
+                
+                fig_timeline.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#e2e8f0'),
+                    xaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(160, 174, 192, 0.1)',
+                        title='Date',
+                        tickangle=-45
+                    ),
+                    yaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(160, 174, 192, 0.1)',
+                        title='Count',
+                        tickmode='linear',
+                        dtick=1
+                    ),
+                    height=350,
+                    margin=dict(t=30, b=80, l=40, r=20),
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig_timeline, use_container_width=True)
+        else:
+            st.info("📊 No data available for analytics. Upload a file or adjust filters.")
+    
+    st.markdown("---")
     
     # Sports Stats
     st.markdown("#### 🏆 Thống kê theo Sports")
