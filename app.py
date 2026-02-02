@@ -74,6 +74,40 @@ def init_db():
         )
     ''')
     
+    # Archive table for completed Buy Ready articles
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS archived_articles (
+            id SERIAL PRIMARY KEY,
+            factory VARCHAR(100),
+            sports_category VARCHAR(100),
+            article_name TEXT,
+            model VARCHAR(100),
+            article_number VARCHAR(100),
+            leading_buy_ready_date VARCHAR(50),
+            mcs_status VARCHAR(50),
+            fgt_status VARCHAR(50),
+            ft_status VARCHAR(50),
+            wt_status VARCHAR(50),
+            archived_at TIMESTAMP,
+            original_created_at TIMESTAMP
+        )
+    ''')
+    
+    # Archive table for completed Drop articles
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS archived_drop_articles (
+            id SERIAL PRIMARY KEY,
+            season VARCHAR(100),
+            factory VARCHAR(100),
+            sports_category VARCHAR(100),
+            article_name TEXT,
+            model VARCHAR(100),
+            article_number VARCHAR(100),
+            archived_at TIMESTAMP,
+            original_created_at TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     cursor.close()
     conn.close()
@@ -91,6 +125,22 @@ def load_drop_from_db():
     """Load Drop Report data from database"""
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM drop_articles ORDER BY season, sports_category", conn)
+    conn.close()
+    return df
+
+@st.cache_data(ttl=60)
+def load_archived_br():
+    """Load archived Buy Ready articles"""
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM archived_articles ORDER BY archived_at DESC", conn)
+    conn.close()
+    return df
+
+@st.cache_data(ttl=60)
+def load_archived_drop():
+    """Load archived Drop articles"""
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM archived_drop_articles ORDER BY archived_at DESC", conn)
     conn.close()
     return df
 
@@ -182,25 +232,54 @@ def save_to_db(df_new):
             ))
             inserted += 1
     
-    # Delete articles not in new file
-    deleted = 0
+    # Archive articles not in new file (completed articles)
+    archived = 0
+    archived_list = []
     for old_article in existing_articles.keys():
         if old_article not in new_article_numbers:
+            # Move to archive instead of delete
+            cursor.execute('''
+                INSERT INTO archived_articles (
+                    factory, sports_category, article_name, model, article_number,
+                    leading_buy_ready_date, mcs_status, fgt_status, ft_status, wt_status,
+                    archived_at, original_created_at
+                )
+                SELECT factory, sports_category, article_name, model, article_number,
+                       leading_buy_ready_date, mcs_status, fgt_status, ft_status, wt_status,
+                       NOW(), created_at
+                FROM articles WHERE article_number = %s
+            ''', (old_article,))
             cursor.execute("DELETE FROM articles WHERE article_number = %s", (old_article,))
-            deleted += 1
+            archived += 1
+            archived_list.append(old_article)
     
     conn.commit()
     conn.close()
-    return inserted, updated, deleted, skipped, new_articles, changed_articles
+    return inserted, updated, archived, skipped, new_articles, changed_articles, archived_list
 
 def save_drop_to_db(df_new):
-    """Save Drop Report data to database"""
+    """Save Drop Report data to database. Returns (inserted, updated, archived, skipped, new_articles, archived_list)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     inserted = 0
     updated = 0
     skipped = 0
+    new_articles = []  # Track new article numbers
+    
+    # Get all season+article combinations from new file
+    new_article_keys = set()
+    for _, row in df_new.iterrows():
+        article_number = str(row.get('Article NUMBER', '')).strip()
+        season = str(row.get('Season', '')).strip()
+        if article_number and article_number != 'nan' and season:
+            new_article_keys.add((season, article_number))
+    
+    # Get existing articles
+    existing_articles = {}
+    cursor.execute("SELECT season, article_number, id FROM drop_articles")
+    for row in cursor.fetchall():
+        existing_articles[(row[0], row[1])] = row[2]
     
     for _, row in df_new.iterrows():
         article_number = str(row.get('Article NUMBER', '')).strip()
@@ -210,12 +289,10 @@ def save_drop_to_db(df_new):
             skipped += 1
             continue
         
-        cursor.execute("SELECT id FROM drop_articles WHERE season = %s AND article_number = %s", (season, article_number))
-        existing = cursor.fetchone()
-        
         now = datetime.now().isoformat()
+        key = (season, article_number)
         
-        if existing:
+        if key in existing_articles:
             cursor.execute('''
                 UPDATE drop_articles SET
                     factory = %s, sports_category = %s, article_name = %s, model = %s, updated_at = %s
@@ -229,6 +306,7 @@ def save_drop_to_db(df_new):
             ))
             updated += 1
         else:
+            new_articles.append(article_number)  # Track as NEW
             cursor.execute('''
                 INSERT INTO drop_articles (season, factory, sports_category, article_name, model, article_number, created_at, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -242,9 +320,29 @@ def save_drop_to_db(df_new):
             ))
             inserted += 1
     
+    # Archive articles not in new file (completed)
+    archived = 0
+    archived_list = []
+    for old_key in existing_articles.keys():
+        if old_key not in new_article_keys:
+            season, article_number = old_key
+            # Move to archive
+            cursor.execute('''
+                INSERT INTO archived_drop_articles (
+                    season, factory, sports_category, article_name, model, article_number,
+                    archived_at, original_created_at
+                )
+                SELECT season, factory, sports_category, article_name, model, article_number,
+                       NOW(), created_at
+                FROM drop_articles WHERE season = %s AND article_number = %s
+            ''', (season, article_number))
+            cursor.execute("DELETE FROM drop_articles WHERE season = %s AND article_number = %s", (season, article_number))
+            archived += 1
+            archived_list.append(article_number)
+    
     conn.commit()
     conn.close()
-    return inserted, updated, skipped
+    return inserted, updated, archived, skipped, new_articles, archived_list
 
 def update_all_statuses(df):
     """Update all status columns from dataframe"""
@@ -459,6 +557,56 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
     
+    # Archive Section - V3.2
+    try:
+        archived_br = load_archived_br()
+        archived_drop = load_archived_drop()
+        
+        if len(archived_br) > 0 or len(archived_drop) > 0:
+            st.markdown("""
+                <div style="margin-top: 0.75rem;">
+                    <div style="
+                        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                        padding: 1rem;
+                        border-radius: 12px;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                    ">
+                        <div style="color: #e2e8f0; font-size: 0.85rem; margin-bottom: 0.5rem;">📦 Archive (Hoàn thành)</div>
+                        <div style="display: flex; gap: 1rem;">
+            """, unsafe_allow_html=True)
+            st.markdown(f"""
+                            <div style="text-align: center;">
+                                <div style="color: white; font-size: 1.5rem; font-weight: 700;">{len(archived_br)}</div>
+                                <div style="color: #d1fae5; font-size: 0.7rem;">BR</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="color: white; font-size: 1.5rem; font-weight: 700;">{len(archived_drop)}</div>
+                                <div style="color: #d1fae5; font-size: 0.7rem;">DROP</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Export Archive button
+            if st.button("📤 Export Archive", key="export_archive"):
+                import io
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    if len(archived_br) > 0:
+                        archived_br.to_excel(writer, sheet_name='BR Archive', index=False)
+                    if len(archived_drop) > 0:
+                        archived_drop.to_excel(writer, sheet_name='DROP Archive', index=False)
+                output.seek(0)
+                st.download_button(
+                    label="⬇️ Download Archive.xlsx",
+                    data=output.getvalue(),
+                    file_name=f"archive_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+    except Exception as e:
+        pass  # Archive tables might not exist yet
+    
     st.markdown("---")
     
     # ==================== TIMELINE IN SIDEBAR ====================
@@ -598,18 +746,20 @@ if uploaded_file is not None:
                     'Lifecycle State': df_filtered[col_lifecycle] if col_lifecycle else '',
                 })
                 
-                inserted, updated, deleted, skipped, new_articles, changed_articles = save_to_db(save_data)
+                inserted, updated, archived, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
                 
                 # Store in session state for highlighting
                 st.session_state.new_articles = new_articles
                 st.session_state.changed_articles = changed_articles
                 
                 # Show summary
-                msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{deleted}** xóa | **{skipped}** bỏ qua"
+                msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{archived}** archived | **{skipped}** bỏ qua"
                 if new_articles:
                     msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:10])}" + ("..." if len(new_articles) > 10 else "")
                 if changed_articles:
                     msg += f"\n\n📅 **Date thay đổi:** {', '.join(changed_articles[:10])}" + ("..." if len(changed_articles) > 10 else "")
+                if archived_list:
+                    msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
                 st.success(msg)
             else:
                 st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
@@ -655,8 +805,17 @@ if uploaded_file is not None:
         
         if all_data:
             combined = pd.concat(all_data, ignore_index=True)
-            inserted, updated, skipped = save_drop_to_db(combined)
-            st.success(f"✅ **{inserted}** mới | **{updated}** cập nhật | **{skipped}** bỏ qua")
+            inserted, updated, archived, skipped, new_articles, archived_list = save_drop_to_db(combined)
+            
+            # Store new articles for DROP highlighting
+            st.session_state.drop_new_articles = new_articles
+            
+            msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{archived}** archived | **{skipped}** bỏ qua"
+            if new_articles:
+                msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:10])}" + ("..." if len(new_articles) > 10 else "")
+            if archived_list:
+                msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+            st.success(msg)
             st.rerun()
 
     else:
@@ -734,7 +893,7 @@ if len(br_data) > 0:
     with col_f3:
         search_query = st.text_input("🔍 Tìm kiếm Article", placeholder="Nhập Article NAME hoặc NUMBER...", key='br_search')
     with col_f4:
-        status_opts = ['-- Tất cả --', 'PASSED', 'NOT YET UPDATED', 'PENDING', 'Processing']
+        status_opts = ['-- Tất cả --', '✅ PASSED', '⏳ NOT YET UPDATED', '🔴 PENDING', '🔄 Processing']
         selected_status = st.selectbox("📊 Overall Status", status_opts, key='br_status')
     
     st.markdown("---")
@@ -748,18 +907,18 @@ if len(br_data) > 0:
         
         # Check if all empty
         if mcs == '' and fgt == '' and ft == '' and wt == '':
-            return 'NOT YET UPDATED'
+            return '⏳ NOT YET UPDATED'
         
         # Check if any PENDING, ETD, or SENT
         all_statuses = mcs + ' ' + fgt + ' ' + ft + ' ' + wt
         if 'PENDING' in all_statuses or 'ETD' in all_statuses or 'SENT' in all_statuses:
-            return 'PENDING'
+            return '🔴 PENDING'
         
         # Check if PASSED
         if mcs == 'APPROVED' and fgt == 'PASSED':
-            return 'PASSED'
+            return '✅ PASSED'
         
-        return 'Processing'
+        return '🔄 Processing'
     
     df_br['Status'] = df_br.apply(get_overall_status, axis=1)
     
@@ -795,18 +954,27 @@ if len(br_data) > 0:
                 st.markdown("##### 📈 Status Distribution")
                 status_counts = df_br_filtered['Status'].value_counts()
                 
-                # Define colors matching V3 theme
+                # Define colors matching V3 theme (map with emojis for values)
                 color_map = {
-                    'PASSED': '#10b981',          # green
-                    'Processing': '#667eea',       # purple
-                    'PENDING': '#f59e0b',          # yellow
-                    'NOT YET UPDATED': '#a0aec0'   # gray
+                    '✅ PASSED': '#10b981',           # green
+                    '🔄 Processing': '#667eea',        # purple
+                    '🔴 PENDING': '#f59e0b',           # yellow
+                    '⏳ NOT YET UPDATED': '#a0aec0'    # gray
+                }
+                
+                # Clean labels (remove emojis for chart display)
+                label_map = {
+                    '✅ PASSED': 'PASSED',
+                    '🔄 Processing': 'Processing',
+                    '🔴 PENDING': 'PENDING',
+                    '⏳ NOT YET UPDATED': 'NOT YET UPDATED'
                 }
                 
                 colors = [color_map.get(status, '#a0aec0') for status in status_counts.index]
+                clean_labels = [label_map.get(status, status) for status in status_counts.index]
                 
                 fig_status = go.Figure(data=[go.Pie(
-                    labels=status_counts.index,
+                    labels=clean_labels,
                     values=status_counts.values,
                     hole=0.5,  # Donut chart
                     marker=dict(colors=colors, line=dict(color='#1a1a2e', width=2)),
