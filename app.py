@@ -1054,9 +1054,9 @@ if len(br_data) > 0:
                 timeline_grouped.columns = ['date', 'sport', 'count']
                 timeline_grouped = timeline_grouped.sort_values('date')
                 
-                # Format dates for display (dd/mm/yyyy)
+                # Format dates for display (mm/dd/yyyy)
                 timeline_grouped['date_label'] = timeline_grouped['date'].apply(
-                    lambda d: d.strftime('%d/%m/%Y') if d else ''
+                    lambda d: d.strftime('%m/%d/%Y') if d else ''
                 )
                 
                 fig_grouped = go.Figure()
