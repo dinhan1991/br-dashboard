@@ -1054,8 +1054,10 @@ if len(br_data) > 0:
                 timeline_grouped.columns = ['date', 'sport', 'count']
                 timeline_grouped = timeline_grouped.sort_values('date')
                 
-                # Get unique dates sorted
-                unique_dates = sorted(timeline_grouped['date'].unique())
+                # Format dates for display (dd/mm/yyyy)
+                timeline_grouped['date_label'] = timeline_grouped['date'].apply(
+                    lambda d: d.strftime('%d/%m/%Y') if d else ''
+                )
                 
                 fig_grouped = go.Figure()
                 
@@ -1063,7 +1065,7 @@ if len(br_data) > 0:
                 af_data = timeline_grouped[timeline_grouped['sport'] == 'American Football']
                 if len(af_data) > 0:
                     fig_grouped.add_trace(go.Bar(
-                        y=[str(d) for d in af_data['date']],
+                        y=af_data['date_label'],
                         x=af_data['count'],
                         name='🏈 Am. Football',
                         orientation='h',
@@ -1078,7 +1080,7 @@ if len(br_data) > 0:
                 dugout_data = timeline_grouped[timeline_grouped['sport'] == 'Dugout']
                 if len(dugout_data) > 0:
                     fig_grouped.add_trace(go.Bar(
-                        y=[str(d) for d in dugout_data['date']],
+                        y=dugout_data['date_label'],
                         x=dugout_data['count'],
                         name='⚾ Dugout',
                         orientation='h',
@@ -1088,6 +1090,9 @@ if len(br_data) > 0:
                         textfont=dict(size=12, color='white'),
                         hovertemplate='<b>Dugout</b><br>%{y}<br>Count: %{x}<extra></extra>'
                     ))
+                
+                # Get all unique date labels sorted by actual date
+                all_dates = timeline_grouped.sort_values('date')['date_label'].unique().tolist()
                 
                 fig_grouped.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)',
@@ -1104,7 +1109,8 @@ if len(br_data) > 0:
                     yaxis=dict(
                         showgrid=False,
                         title='Buy Ready Date',
-                        categoryorder='category ascending'
+                        categoryorder='array',
+                        categoryarray=all_dates
                     ),
                     height=400,
                     margin=dict(t=30, b=40, l=100, r=20),
