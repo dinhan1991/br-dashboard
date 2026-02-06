@@ -485,7 +485,7 @@ with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 1rem;">
             <h2 style="color: #667eea; margin: 0;">🏈 BR Tracking</h2>
-            <span class="version-tag">v3.2</span>
+            <span class="version-tag">v3.3</span>
         </div>
     """, unsafe_allow_html=True)
     
@@ -1124,6 +1124,107 @@ if len(br_data) > 0:
                 )
                 
                 st.plotly_chart(fig_grouped, use_container_width=True)
+            
+            # Chart 3: DONE vs PENDING Overview (V3.3)
+            st.markdown("---")
+            st.markdown("##### 📊 Signing Progress Overview")
+            
+            try:
+                archived_br_data = load_archived_br()
+                done_count = len(archived_br_data)
+            except:
+                done_count = 0
+            
+            pending_count = len(df_br_filtered)
+            total_count = done_count + pending_count
+            
+            col_progress1, col_progress2 = st.columns(2)
+            
+            with col_progress1:
+                # Progress bar chart
+                fig_progress = go.Figure()
+                
+                fig_progress.add_trace(go.Bar(
+                    y=['Articles'],
+                    x=[done_count],
+                    name='✅ DONE (Archived)',
+                    orientation='h',
+                    marker=dict(color='#10b981'),
+                    text=[f'{done_count} DONE'],
+                    textposition='inside',
+                    textfont=dict(size=14, color='white'),
+                    hovertemplate='<b>DONE</b><br>Count: %{x}<extra></extra>'
+                ))
+                
+                fig_progress.add_trace(go.Bar(
+                    y=['Articles'],
+                    x=[pending_count],
+                    name='🔴 PENDING (Current)',
+                    orientation='h',
+                    marker=dict(color='#f59e0b'),
+                    text=[f'{pending_count} PENDING'],
+                    textposition='inside',
+                    textfont=dict(size=14, color='white'),
+                    hovertemplate='<b>PENDING</b><br>Count: %{x}<extra></extra>'
+                ))
+                
+                fig_progress.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#e2e8f0'),
+                    barmode='stack',
+                    xaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(160, 174, 192, 0.1)',
+                        title='Article Count'
+                    ),
+                    yaxis=dict(showgrid=False, showticklabels=False),
+                    height=150,
+                    margin=dict(t=10, b=40, l=20, r=20),
+                    legend=dict(
+                        orientation='h',
+                        yanchor='top',
+                        y=-0.3,
+                        xanchor='center',
+                        x=0.5
+                    )
+                )
+                
+                st.plotly_chart(fig_progress, use_container_width=True)
+            
+            with col_progress2:
+                # Stats cards
+                if total_count > 0:
+                    done_pct = (done_count / total_count) * 100
+                else:
+                    done_pct = 0
+                
+                st.markdown(f"""
+                    <div style="display: flex; gap: 1rem; height: 100%;">
+                        <div style="
+                            flex: 1;
+                            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                            padding: 1rem;
+                            border-radius: 12px;
+                            text-align: center;
+                        ">
+                            <div style="color: #d1fae5; font-size: 0.85rem;">✅ DONE</div>
+                            <div style="color: white; font-size: 2rem; font-weight: 700;">{done_count}</div>
+                            <div style="color: #d1fae5; font-size: 0.85rem;">{done_pct:.1f}%</div>
+                        </div>
+                        <div style="
+                            flex: 1;
+                            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+                            padding: 1rem;
+                            border-radius: 12px;
+                            text-align: center;
+                        ">
+                            <div style="color: #fef3c7; font-size: 0.85rem;">🔴 PENDING</div>
+                            <div style="color: white; font-size: 2rem; font-weight: 700;">{pending_count}</div>
+                            <div style="color: #fef3c7; font-size: 0.85rem;">{100-done_pct:.1f}%</div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
         else:
             st.info("📊 No data available for analytics. Upload a file or adjust filters.")
     
