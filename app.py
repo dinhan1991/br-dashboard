@@ -1179,12 +1179,12 @@ if len(br_data) > 0:
                         title='Article Count'
                     ),
                     yaxis=dict(showgrid=False, showticklabels=False),
-                    height=150,
-                    margin=dict(t=10, b=40, l=20, r=20),
+                    height=180,
+                    margin=dict(t=30, b=30, l=20, r=20),
                     legend=dict(
                         orientation='h',
-                        yanchor='top',
-                        y=-0.3,
+                        yanchor='bottom',
+                        y=1.02,
                         xanchor='center',
                         x=0.5
                     )
