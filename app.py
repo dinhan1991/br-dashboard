@@ -195,22 +195,34 @@ def save_to_db(df_new):
             if old_date != str(leading_buy):
                 changed_articles.append(article_number)
             
-            cursor.execute('''
-                UPDATE articles SET
-                    factory = %s, sports_category = %s, article_name = %s, model = %s,
-                    pre_confirm_date = %s, leading_buy_ready_date = %s,
-                    product_weight = %s, lifecycle_state = %s, updated_at = %s
+            # Build dynamic UPDATE - only update fields that have values
+            update_fields = {
+                'factory': str(row.get('Factory', '')),
+                'sports_category': str(row.get('Sports Category', '')),
+                'article_name': str(row.get('Article NAME', '')),
+                'model': str(row.get('Model', '')),
+                'pre_confirm_date': str(pre_confirm),
+                'leading_buy_ready_date': str(leading_buy),
+                'updated_at': now,
+            }
+            
+            # Only update weight/lifecycle if column was found in Excel (not None)
+            weight_val = row.get('Product Weight')
+            lifecycle_val = row.get('Lifecycle State')
+            
+            if weight_val is not None and not (isinstance(weight_val, float) and pd.isna(weight_val)):
+                update_fields['product_weight'] = str(weight_val)
+            
+            if lifecycle_val is not None and not (isinstance(lifecycle_val, float) and pd.isna(lifecycle_val)):
+                update_fields['lifecycle_state'] = str(lifecycle_val)
+            
+            set_clause = ', '.join([f'{k} = %s' for k in update_fields.keys()])
+            values = list(update_fields.values()) + [article_number]
+            
+            cursor.execute(f'''
+                UPDATE articles SET {set_clause}
                 WHERE article_number = %s
-            ''', (
-                str(row.get('Factory', '')),
-                str(row.get('Sports Category', '')),
-                str(row.get('Article NAME', '')),
-                str(row.get('Model', '')),
-                str(pre_confirm), str(leading_buy),
-                str(row.get('Product Weight', '')),
-                str(row.get('Lifecycle State', '')),
-                now, article_number
-            ))
+            ''', values)
             updated += 1
         else:
             new_articles.append(article_number)
@@ -753,8 +765,17 @@ if uploaded_file is not None:
         col_article_number = find_column(df, ['Article NUMBER', 'Article Number'])
         col_pre_confirm = find_column(df, ['Pre-Confirm Date', 'PreConfirm Date'])
         col_leading_buy = find_column(df, ['Leading Buy Ready Date', 'LeadingBuyReadyDate'])
-        col_weight = find_column(df, ['Product Weight', 'ProductWeight'])
-        col_lifecycle = find_column(df, ['Article Season Lifecycle State', 'Lifecycle State', 'Season Lifecycle State'])
+        col_weight = find_column(df, ['Product Weight', 'ProductWeight', 'Product Weight (g)', 'Weight', 'Prod Weight'])
+        col_lifecycle = find_column(df, ['Article Season Lifecycle State', 'Lifecycle State', 'Season Lifecycle State', 'LifecycleState'])
+        
+        # Debug: warn about unmapped columns
+        unmapped = []
+        if not col_weight:
+            unmapped.append('Product Weight')
+        if not col_lifecycle:
+            unmapped.append('Lifecycle State')
+        if unmapped:
+            st.warning(f"⚠️ Không tìm thấy cột: **{', '.join(unmapped)}** trong file Excel. Dữ liệu cũ sẽ được giữ nguyên.\n\nCác cột trong file: {', '.join(df.columns.tolist())}")
         
         # Allowed factories (HWA only - matches global constant)
         ALLOWED_FACTORIES = ['HWA']
@@ -777,8 +798,8 @@ if uploaded_file is not None:
                     'Article NUMBER': df_filtered[col_article_number] if col_article_number else '',
                     'Pre-Confirm Date': df_filtered[col_pre_confirm] if col_pre_confirm else '',
                     'Leading Buy Ready Date': df_filtered[col_leading_buy] if col_leading_buy else '',
-                    'Product Weight': df_filtered[col_weight] if col_weight else '',
-                    'Lifecycle State': df_filtered[col_lifecycle] if col_lifecycle else '',
+                    'Product Weight': df_filtered[col_weight] if col_weight else None,
+                    'Lifecycle State': df_filtered[col_lifecycle] if col_lifecycle else None,
                 })
                 
                 inserted, updated, archived, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
