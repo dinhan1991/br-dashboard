@@ -497,7 +497,7 @@ with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 1rem;">
             <h2 style="color: #667eea; margin: 0;">🏈 BR Tracking</h2>
-            <span class="version-tag">v3.3</span>
+            <span class="version-tag">v3.4</span>
         </div>
     """, unsafe_allow_html=True)
     
@@ -664,25 +664,44 @@ with st.sidebar:
         if 'timeline_filter' not in st.session_state:
             st.session_state.timeline_filter = None
         
-        def extract_etd_date_sidebar(status_text):
-            """Extract ETD date from status text"""
+        def extract_date_from_status(status_text):
+            """Extract ETD or ETC date from status text. Returns (date, type) or (None, None)"""
             if not status_text or str(status_text) == 'nan':
-                return None
-            match = re.search(r'ETD\s*(\d{1,2})/(\d{1,2})', str(status_text).upper())
-            if match:
-                month = int(match.group(1))
-                day = int(match.group(2))
+                return None, None
+            text_upper = str(status_text).upper()
+            # Check for ETC first (ETC = PENDING)
+            match_etc = re.search(r'ETC\s*(\d{1,2})/(\d{1,2})', text_upper)
+            if match_etc:
+                month = int(match_etc.group(1))
+                day = int(match_etc.group(2))
                 year = datetime.now().year
                 if month < datetime.now().month:
                     year += 1
                 try:
-                    return datetime(year, month, day).date()
+                    return datetime(year, month, day).date(), 'ETC'
                 except:
-                    return None
-            return None
+                    pass
+            # Check for ETC without date (just keyword)
+            if 'ETC' in text_upper and not match_etc:
+                return None, 'ETC'
+            # Check for ETD
+            match_etd = re.search(r'ETD\s*(\d{1,2})/(\d{1,2})', text_upper)
+            if match_etd:
+                month = int(match_etd.group(1))
+                day = int(match_etd.group(2))
+                year = datetime.now().year
+                if month < datetime.now().month:
+                    year += 1
+                try:
+                    return datetime(year, month, day).date(), 'ETD'
+                except:
+                    pass
+            return None, None
         
-        # Extract timeline items
+        # Extract timeline items (ETD) and pending items (ETC)
         timeline_items = []
+        pending_items = []  # ETC = PENDING
+        col_label_map = {'mcs_status': 'MCS', 'fgt_status': 'FGT', 'ft_status': 'FT', 'wt_status': 'WT'}
         for _, row in br_data.iterrows():
             article = str(row.get('article_number', ''))
             factory = str(row.get('factory', ''))
@@ -690,47 +709,78 @@ with st.sidebar:
             for col in ['mcs_status', 'fgt_status', 'ft_status', 'wt_status']:
                 if col in br_data.columns:
                     status_val = str(row.get(col, ''))
-                    etd_date = extract_etd_date_sidebar(status_val)
-                    if etd_date:
+                    extracted_date, date_type = extract_date_from_status(status_val)
+                    step_label = col_label_map.get(col, col)
+                    if date_type == 'ETC':
+                        pending_items.append({
+                            'Article': article,
+                            'Factory': factory,
+                            'ETC Date': extracted_date,  # May be None if just "ETC" keyword
+                            'Step': step_label,
+                        })
+                    elif date_type == 'ETD' and extracted_date:
                         timeline_items.append({
                             'Article': article,
                             'Factory': factory,
-                            'ETD Date': etd_date,
+                            'ETD Date': extracted_date,
                         })
         
-        if timeline_items:
+        if timeline_items or pending_items:
             today = datetime.now().date()
-            overdue = [item for item in timeline_items if item['ETD Date'] < today]
-            due_today = [item for item in timeline_items if item['ETD Date'] == today]
-            upcoming = [item for item in timeline_items if item['ETD Date'] > today and item['ETD Date'] <= today + pd.Timedelta(days=7)]
             
             st.markdown("#### ⏰ Timeline")
             
-            # Overdue
-            if overdue:
-                st.markdown(f'<div style="color: #e74c3c; font-weight: bold;">🚨 Quá hạn: {len(overdue)}</div>', unsafe_allow_html=True)
-                for idx, item in enumerate(sorted(overdue, key=lambda x: x['ETD Date'])[:5]):  # Limit to 5
-                    days_over = (today - item['ETD Date']).days
-                    if st.button(f"⚠️ {item['Article']} (-{days_over}d)", key=f"sb_over_{idx}", use_container_width=True):
-                        st.session_state.timeline_filter = item['Article']
+            # === PENDING (ETC) Section ===
+            if pending_items:
+                # Deduplicate by article (show each article only once with all pending steps)
+                pending_by_article = {}
+                for item in pending_items:
+                    art = item['Article']
+                    if art not in pending_by_article:
+                        pending_by_article[art] = {'steps': [], 'date': item.get('ETC Date')}
+                    pending_by_article[art]['steps'].append(item['Step'])
+                    if item.get('ETC Date') and not pending_by_article[art]['date']:
+                        pending_by_article[art]['date'] = item['ETC Date']
+                
+                st.markdown(f'<div style="color: #f59e0b; font-weight: bold;">⏳ PENDING (ETC): {len(pending_by_article)}</div>', unsafe_allow_html=True)
+                for idx, (article, info) in enumerate(list(pending_by_article.items())[:8]):
+                    steps_str = ','.join(info['steps'])
+                    date_str = f" ({info['date'].strftime('%m/%d')})" if info['date'] else ''
+                    if st.button(f"🟡 {article} [{steps_str}]{date_str}", key=f"sb_pend_{idx}", use_container_width=True):
+                        st.session_state.timeline_filter = article
                         st.rerun()
             
-            # Today
-            if due_today:
-                st.markdown(f'<div style="color: #f39c12; font-weight: bold;">📅 Hôm nay: {len(due_today)}</div>', unsafe_allow_html=True)
-                for idx, item in enumerate(due_today[:5]):
-                    if st.button(f"🔔 {item['Article']}", key=f"sb_today_{idx}", use_container_width=True):
-                        st.session_state.timeline_filter = item['Article']
-                        st.rerun()
-            
-            # Upcoming
-            if upcoming:
-                st.markdown(f'<div style="color: #3498db; font-weight: bold;">📆 7 ngày tới: {len(upcoming)}</div>', unsafe_allow_html=True)
-                for idx, item in enumerate(sorted(upcoming, key=lambda x: x['ETD Date'])[:5]):
-                    days_left = (item['ETD Date'] - today).days
-                    if st.button(f"⏳ {item['Article']} ({days_left}d)", key=f"sb_up_{idx}", use_container_width=True):
-                        st.session_state.timeline_filter = item['Article']
-                        st.rerun()
+            # === ETD Timeline Section ===
+            if timeline_items:
+                overdue = [item for item in timeline_items if item['ETD Date'] < today]
+                due_today = [item for item in timeline_items if item['ETD Date'] == today]
+                upcoming = [item for item in timeline_items if item['ETD Date'] > today and item['ETD Date'] <= today + pd.Timedelta(days=7)]
+                
+                # Overdue
+                if overdue:
+                    st.markdown(f'<div style="color: #e74c3c; font-weight: bold;">🚨 Quá hạn: {len(overdue)}</div>', unsafe_allow_html=True)
+                    for idx, item in enumerate(sorted(overdue, key=lambda x: x['ETD Date'])[:5]):
+                        days_over = (today - item['ETD Date']).days
+                        if st.button(f"⚠️ {item['Article']} (-{days_over}d)", key=f"sb_over_{idx}", use_container_width=True):
+                            st.session_state.timeline_filter = item['Article']
+                            st.rerun()
+                
+                # Today
+                if due_today:
+                    st.markdown(f'<div style="color: #f39c12; font-weight: bold;">📅 Hôm nay: {len(due_today)}</div>', unsafe_allow_html=True)
+                    for idx, item in enumerate(due_today[:5]):
+                        if st.button(f"🔔 {item['Article']}", key=f"sb_today_{idx}", use_container_width=True):
+                            st.session_state.timeline_filter = item['Article']
+                            st.rerun()
+                
+                # Upcoming
+                if upcoming:
+                    st.markdown(f'<div style="color: #3498db; font-weight: bold;">📆 7 ngày tới: {len(upcoming)}</div>', unsafe_allow_html=True)
+                    for idx, item in enumerate(sorted(upcoming, key=lambda x: x['ETD Date'])[:5]):
+                        days_left = (item['ETD Date'] - today).days
+                        if st.button(f"⏳ {item['Article']} ({days_left}d)", key=f"sb_up_{idx}", use_container_width=True):
+                            st.session_state.timeline_filter = item['Article']
+                            st.rerun()
             
             # Clear filter button
             if st.session_state.timeline_filter:
@@ -965,9 +1015,9 @@ if len(br_data) > 0:
         if mcs == '' and fgt == '' and ft == '' and wt == '':
             return '⏳ NOT YET UPDATED'
         
-        # Check if any PENDING, ETD, or SENT
+        # Check if any PENDING, ETD, ETC, or SENT
         all_statuses = mcs + ' ' + fgt + ' ' + ft + ' ' + wt
-        if 'PENDING' in all_statuses or 'ETD' in all_statuses or 'SENT' in all_statuses:
+        if 'PENDING' in all_statuses or 'ETD' in all_statuses or 'ETC' in all_statuses or 'SENT' in all_statuses:
             return '🔴 PENDING'
         
         # Check if PASSED
