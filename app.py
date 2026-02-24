@@ -144,6 +144,15 @@ def load_archived_drop():
     conn.close()
     return df
 
+def safe_str(val, default=''):
+    """Convert value to string safely - return empty string for NaN/None instead of 'nan'"""
+    if val is None or (isinstance(val, float) and pd.isna(val)) or pd.isna(val):
+        return default
+    s = str(val).strip()
+    if s.lower() == 'nan' or s.lower() == 'none' or s.lower() == 'nat':
+        return default
+    return s
+
 def save_to_db(df_new):
     """Save Buy Ready data to database. Returns (inserted, updated, deleted, skipped, new_articles, changed_articles)"""
     conn = get_db_connection()
@@ -197,12 +206,12 @@ def save_to_db(df_new):
             
             # Build dynamic UPDATE - only update fields that have values
             update_fields = {
-                'factory': str(row.get('Factory', '')),
-                'sports_category': str(row.get('Sports Category', '')),
-                'article_name': str(row.get('Article NAME', '')),
-                'model': str(row.get('Model', '')),
-                'pre_confirm_date': str(pre_confirm),
-                'leading_buy_ready_date': str(leading_buy),
+                'factory': safe_str(row.get('Factory', '')),
+                'sports_category': safe_str(row.get('Sports Category', '')),
+                'article_name': safe_str(row.get('Article NAME', '')),
+                'model': safe_str(row.get('Model', '')),
+                'pre_confirm_date': safe_str(pre_confirm),
+                'leading_buy_ready_date': safe_str(leading_buy),
                 'updated_at': now,
             }
             
@@ -233,13 +242,13 @@ def save_to_db(df_new):
                     mcs_status, fgt_status, ft_status, wt_status, created_at, updated_at
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '', '', '', '', %s, %s)
             ''', (
-                str(row.get('Factory', '')),
-                str(row.get('Sports Category', '')),
-                str(row.get('Article NAME', '')),
-                str(row.get('Model', '')),
-                article_number, str(pre_confirm), str(leading_buy),
-                str(row.get('Product Weight', '')),
-                str(row.get('Lifecycle State', '')),
+                safe_str(row.get('Factory', '')),
+                safe_str(row.get('Sports Category', '')),
+                safe_str(row.get('Article NAME', '')),
+                safe_str(row.get('Model', '')),
+                article_number, safe_str(pre_confirm), safe_str(leading_buy),
+                safe_str(row.get('Product Weight', '')),
+                safe_str(row.get('Lifecycle State', '')),
                 now, now
             ))
             inserted += 1
@@ -310,10 +319,10 @@ def save_drop_to_db(df_new):
                     factory = %s, sports_category = %s, article_name = %s, model = %s, updated_at = %s
                 WHERE season = %s AND article_number = %s
             ''', (
-                str(row.get('Factory', '')),
-                str(row.get('Sports Category', '')),
-                str(row.get('Article NAME', '')),
-                str(row.get('Model', '')),
+                safe_str(row.get('Factory', '')),
+                safe_str(row.get('Sports Category', '')),
+                safe_str(row.get('Article NAME', '')),
+                safe_str(row.get('Model', '')),
                 now, season, article_number
             ))
             updated += 1
@@ -324,10 +333,10 @@ def save_drop_to_db(df_new):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 season,
-                str(row.get('Factory', '')),
-                str(row.get('Sports Category', '')),
-                str(row.get('Article NAME', '')),
-                str(row.get('Model', '')),
+                safe_str(row.get('Factory', '')),
+                safe_str(row.get('Sports Category', '')),
+                safe_str(row.get('Article NAME', '')),
+                safe_str(row.get('Model', '')),
                 article_number, now, now
             ))
             inserted += 1
