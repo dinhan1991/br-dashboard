@@ -678,39 +678,50 @@ with st.sidebar:
             if not status_text or str(status_text) == 'nan':
                 return None, None
             text_upper = str(status_text).upper()
-            # Check for ETC first (ETC = PENDING)
+            # Check for ETC first (ETC = Estimated Time of Completion)
             match_etc = re.search(r'ETC\s*(\d{1,2})/(\d{1,2})', text_upper)
             if match_etc:
                 month = int(match_etc.group(1))
                 day = int(match_etc.group(2))
                 year = datetime.now().year
-                if month < datetime.now().month:
-                    year += 1
+                # Smart year detection: if date is more than 6 months in the past, assume next year
                 try:
-                    return datetime(year, month, day).date(), 'ETC'
+                    candidate = datetime(year, month, day).date()
+                    if (datetime.now().date() - candidate).days > 180:
+                        candidate = datetime(year + 1, month, day).date()
+                    return candidate, 'ETC'
                 except:
                     pass
             # Check for ETC without date (just keyword)
             if 'ETC' in text_upper and not match_etc:
                 return None, 'ETC'
-            # Check for ETD
+            # Check for ETD (Estimated Time of Delivery)
             match_etd = re.search(r'ETD\s*(\d{1,2})/(\d{1,2})', text_upper)
             if match_etd:
                 month = int(match_etd.group(1))
                 day = int(match_etd.group(2))
                 year = datetime.now().year
-                if month < datetime.now().month:
-                    year += 1
                 try:
-                    return datetime(year, month, day).date(), 'ETD'
+                    candidate = datetime(year, month, day).date()
+                    if (datetime.now().date() - candidate).days > 180:
+                        candidate = datetime(year + 1, month, day).date()
+                    return candidate, 'ETD'
                 except:
                     pass
             return None, None
         
+        # Step label map: abbreviation → full name (Footwear industry)
+        col_label_map = {'mcs_status': 'MCS', 'fgt_status': 'FGT', 'ft_status': 'FT', 'wt_status': 'WT'}
+        col_fullname_map = {
+            'MCS': 'Material Confirmation Sheet',
+            'FGT': 'Finished Good Testing',
+            'FT': 'Fit Trial',
+            'WT': 'Wear Test'
+        }
+        
         # Extract timeline items (ETD) and pending items (ETC)
         timeline_items = []
-        pending_items = []  # ETC = PENDING
-        col_label_map = {'mcs_status': 'MCS', 'fgt_status': 'FGT', 'ft_status': 'FT', 'wt_status': 'WT'}
+        pending_items = []  # ETC items
         for _, row in br_data.iterrows():
             article = str(row.get('article_number', ''))
             factory = str(row.get('factory', ''))
@@ -724,8 +735,9 @@ with st.sidebar:
                         pending_items.append({
                             'Article': article,
                             'Factory': factory,
-                            'ETC Date': extracted_date,  # May be None if just "ETC" keyword
+                            'ETC Date': extracted_date,
                             'Step': step_label,
+                            'Status': status_val,
                         })
                     elif date_type == 'ETD' and extracted_date:
                         timeline_items.append({
@@ -737,27 +749,124 @@ with st.sidebar:
         if timeline_items or pending_items:
             today = datetime.now().date()
             
-            st.markdown("#### ⏰ Timeline")
+            # Timeline header with premium styling
+            st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                    border: 1px solid rgba(102, 126, 234, 0.3);
+                    border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 0.8rem;
+                    text-align: center;
+                ">
+                    <span style="font-size: 1.3rem;">⏰</span>
+                    <span style="color: #e2e8f0; font-weight: 700; font-size: 1.1rem; margin-left: 0.3rem;">Timeline</span>
+                </div>
+            """, unsafe_allow_html=True)
             
-            # === PENDING (ETC) Section ===
+            # === Split ETC items into OVERDUE vs PENDING ===
             if pending_items:
-                # Deduplicate by article (show each article only once with all pending steps)
+                # Deduplicate by article
                 pending_by_article = {}
                 for item in pending_items:
                     art = item['Article']
                     if art not in pending_by_article:
-                        pending_by_article[art] = {'steps': [], 'date': item.get('ETC Date')}
+                        pending_by_article[art] = {'steps': [], 'date': item.get('ETC Date'), 'status': item.get('Status', '')}
                     pending_by_article[art]['steps'].append(item['Step'])
                     if item.get('ETC Date') and not pending_by_article[art]['date']:
                         pending_by_article[art]['date'] = item['ETC Date']
                 
-                st.markdown(f'<div style="color: #f59e0b; font-weight: bold;">⏳ PENDING (ETC): {len(pending_by_article)}</div>', unsafe_allow_html=True)
-                for idx, (article, info) in enumerate(list(pending_by_article.items())[:8]):
-                    steps_str = ','.join(info['steps'])
-                    date_str = f" ({info['date'].strftime('%m/%d')})" if info['date'] else ''
-                    if st.button(f"🟡 {article} [{steps_str}]{date_str}", key=f"sb_pend_{idx}", use_container_width=True):
-                        st.session_state.timeline_filter = article
-                        st.rerun()
+                # Split into overdue and pending
+                etc_overdue = {}
+                etc_pending = {}
+                etc_no_date = {}
+                for art, info in pending_by_article.items():
+                    if info['date'] and info['date'] < today:
+                        etc_overdue[art] = info
+                    elif info['date'] and info['date'] >= today:
+                        etc_pending[art] = info
+                    else:
+                        etc_no_date[art] = info
+                
+                # ── 🚨 OVERDUE ETC Section ── 
+                if etc_overdue:
+                    st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+                            border-radius: 10px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem;
+                            display: flex; align-items: center; justify-content: space-between;
+                        ">
+                            <span style="color: white; font-weight: 700; font-size: 0.85rem;">
+                                🚨 OVERDUE
+                            </span>
+                            <span style="
+                                background: rgba(255,255,255,0.25); color: white;
+                                padding: 0.15rem 0.5rem; border-radius: 12px;
+                                font-weight: 700; font-size: 0.8rem;
+                            ">{len(etc_overdue)}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Sort by most overdue first
+                    sorted_overdue = sorted(etc_overdue.items(), key=lambda x: x[1]['date'])
+                    for idx, (article, info) in enumerate(sorted_overdue[:8]):
+                        days_over = (today - info['date']).days
+                        steps_str = ', '.join(info['steps'])
+                        date_display = info['date'].strftime('%m/%d')
+                        
+                        st.markdown(f"""
+                            <style>
+                                @keyframes pulse-red {{
+                                    0%, 100% {{ opacity: 1; }}
+                                    50% {{ opacity: 0.7; }}
+                                }}
+                            </style>
+                        """, unsafe_allow_html=True)
+                        
+                        if st.button(
+                            f"🔴 {article} [{steps_str}] ({date_display}) · -{days_over}d",
+                            key=f"sb_etc_over_{idx}",
+                            use_container_width=True
+                        ):
+                            st.session_state.timeline_filter = article
+                            st.rerun()
+                
+                # ── ⏳ PENDING ETC Section ──
+                pending_display = {**etc_pending, **etc_no_date}
+                if pending_display:
+                    st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #d69e2e 0%, #b7791f 100%);
+                            border-radius: 10px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem;
+                            margin-top: 0.5rem;
+                            display: flex; align-items: center; justify-content: space-between;
+                        ">
+                            <span style="color: white; font-weight: 700; font-size: 0.85rem;">
+                                ⏳ PENDING
+                            </span>
+                            <span style="
+                                background: rgba(255,255,255,0.25); color: white;
+                                padding: 0.15rem 0.5rem; border-radius: 12px;
+                                font-weight: 700; font-size: 0.8rem;
+                            ">{len(pending_display)}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Sort by earliest ETC date first (no-date items at the end)
+                    sorted_pending = sorted(
+                        pending_display.items(),
+                        key=lambda x: x[1]['date'] if x[1]['date'] else datetime(2099, 12, 31).date()
+                    )
+                    for idx, (article, info) in enumerate(sorted_pending[:8]):
+                        steps_str = ', '.join(info['steps'])
+                        if info['date']:
+                            days_until = (info['date'] - today).days
+                            date_display = info['date'].strftime('%m/%d')
+                            label = f"🟡 {article} [{steps_str}] ({date_display}) · {days_until}d"
+                        else:
+                            label = f"🟡 {article} [{steps_str}]"
+                        
+                        if st.button(label, key=f"sb_etc_pend_{idx}", use_container_width=True):
+                            st.session_state.timeline_filter = article
+                            st.rerun()
             
             # === ETD Timeline Section ===
             if timeline_items:
@@ -765,26 +874,71 @@ with st.sidebar:
                 due_today = [item for item in timeline_items if item['ETD Date'] == today]
                 upcoming = [item for item in timeline_items if item['ETD Date'] > today and item['ETD Date'] <= today + pd.Timedelta(days=7)]
                 
-                # Overdue
+                # ETD Overdue
                 if overdue:
-                    st.markdown(f'<div style="color: #e74c3c; font-weight: bold;">🚨 Quá hạn: {len(overdue)}</div>', unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #9b2c2c 0%, #742a2a 100%);
+                            border-radius: 10px; padding: 0.6rem 0.8rem; margin: 0.5rem 0;
+                            display: flex; align-items: center; justify-content: space-between;
+                        ">
+                            <span style="color: white; font-weight: 700; font-size: 0.85rem;">
+                                🚨 ETD Quá hạn
+                            </span>
+                            <span style="
+                                background: rgba(255,255,255,0.25); color: white;
+                                padding: 0.15rem 0.5rem; border-radius: 12px;
+                                font-weight: 700; font-size: 0.8rem;
+                            ">{len(overdue)}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
                     for idx, item in enumerate(sorted(overdue, key=lambda x: x['ETD Date'])[:5]):
                         days_over = (today - item['ETD Date']).days
                         if st.button(f"⚠️ {item['Article']} (-{days_over}d)", key=f"sb_over_{idx}", use_container_width=True):
                             st.session_state.timeline_filter = item['Article']
                             st.rerun()
                 
-                # Today
+                # ETD Today
                 if due_today:
-                    st.markdown(f'<div style="color: #f39c12; font-weight: bold;">📅 Hôm nay: {len(due_today)}</div>', unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #d69e2e 0%, #b7791f 100%);
+                            border-radius: 10px; padding: 0.6rem 0.8rem; margin: 0.5rem 0;
+                            display: flex; align-items: center; justify-content: space-between;
+                        ">
+                            <span style="color: white; font-weight: 700; font-size: 0.85rem;">
+                                📅 Hôm nay
+                            </span>
+                            <span style="
+                                background: rgba(255,255,255,0.25); color: white;
+                                padding: 0.15rem 0.5rem; border-radius: 12px;
+                                font-weight: 700; font-size: 0.8rem;
+                            ">{len(due_today)}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
                     for idx, item in enumerate(due_today[:5]):
                         if st.button(f"🔔 {item['Article']}", key=f"sb_today_{idx}", use_container_width=True):
                             st.session_state.timeline_filter = item['Article']
                             st.rerun()
                 
-                # Upcoming
+                # ETD Upcoming 7 days
                 if upcoming:
-                    st.markdown(f'<div style="color: #3498db; font-weight: bold;">📆 7 ngày tới: {len(upcoming)}</div>', unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #2b6cb0 0%, #2c5282 100%);
+                            border-radius: 10px; padding: 0.6rem 0.8rem; margin: 0.5rem 0;
+                            display: flex; align-items: center; justify-content: space-between;
+                        ">
+                            <span style="color: white; font-weight: 700; font-size: 0.85rem;">
+                                📆 7 ngày tới
+                            </span>
+                            <span style="
+                                background: rgba(255,255,255,0.25); color: white;
+                                padding: 0.15rem 0.5rem; border-radius: 12px;
+                                font-weight: 700; font-size: 0.8rem;
+                            ">{len(upcoming)}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
                     for idx, item in enumerate(sorted(upcoming, key=lambda x: x['ETD Date'])[:5]):
                         days_left = (item['ETD Date'] - today).days
                         if st.button(f"⏳ {item['Article']} ({days_left}d)", key=f"sb_up_{idx}", use_container_width=True):
@@ -794,7 +948,13 @@ with st.sidebar:
             # Clear filter button
             if st.session_state.timeline_filter:
                 st.markdown("---")
-                st.info(f"🔍 Filter: {st.session_state.timeline_filter}")
+                st.markdown(f"""
+                    <div style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border-radius: 8px; padding: 0.5rem 0.8rem;
+                        color: white; font-size: 0.85rem; text-align: center;
+                    ">🔍 Filter: <b>{st.session_state.timeline_filter}</b></div>
+                """, unsafe_allow_html=True)
                 if st.button("❌ Xóa filter", key="sb_clear", use_container_width=True):
                     st.session_state.timeline_filter = None
                     st.rerun()
