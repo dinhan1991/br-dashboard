@@ -208,12 +208,16 @@ def save_to_db(df_new):
             update_fields = {
                 'factory': safe_str(row.get('Factory', '')),
                 'sports_category': safe_str(row.get('Sports Category', '')),
-                'article_name': safe_str(row.get('Article NAME', '')),
                 'model': safe_str(row.get('Model', '')),
                 'pre_confirm_date': safe_str(pre_confirm),
                 'leading_buy_ready_date': safe_str(leading_buy),
                 'updated_at': now,
             }
+            
+            # Only overwrite article_name if Excel has a non-empty value
+            new_article_name = safe_str(row.get('Article NAME', ''))
+            if new_article_name:
+                update_fields['article_name'] = new_article_name
             
             # Only update weight/lifecycle if column was found in Excel (not None)
             weight_val = row.get('Product Weight')
@@ -314,17 +318,23 @@ def save_drop_to_db(df_new):
         key = (season, article_number)
         
         if key in existing_articles:
-            cursor.execute('''
-                UPDATE drop_articles SET
-                    factory = %s, sports_category = %s, article_name = %s, model = %s, updated_at = %s
+            # Build dynamic UPDATE - preserve article_name if Excel is empty
+            drop_update = {
+                'factory': safe_str(row.get('Factory', '')),
+                'sports_category': safe_str(row.get('Sports Category', '')),
+                'model': safe_str(row.get('Model', '')),
+                'updated_at': now,
+            }
+            new_drop_name = safe_str(row.get('Article NAME', ''))
+            if new_drop_name:
+                drop_update['article_name'] = new_drop_name
+            
+            set_clause = ', '.join([f'{k} = %s' for k in drop_update.keys()])
+            values = list(drop_update.values()) + [season, article_number]
+            cursor.execute(f'''
+                UPDATE drop_articles SET {set_clause}
                 WHERE season = %s AND article_number = %s
-            ''', (
-                safe_str(row.get('Factory', '')),
-                safe_str(row.get('Sports Category', '')),
-                safe_str(row.get('Article NAME', '')),
-                safe_str(row.get('Model', '')),
-                now, season, article_number
-            ))
+            ''', values)
             updated += 1
         else:
             new_articles.append(article_number)  # Track as NEW
