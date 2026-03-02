@@ -982,11 +982,14 @@ with st.sidebar:
 # Process uploaded file
 if uploaded_file is not None:
     file_type = detect_file_type(uploaded_file)
+    print(f"[DEBUG] File uploaded: {uploaded_file.name}, detected type: {file_type}")
     
     if file_type == 'buy_ready':
         st.info("📋 Detected: **Buy Ready Report**")
         
         df = pd.read_excel(uploaded_file)
+        print(f"[DEBUG] Excel loaded: {len(df)} rows, columns: {list(df.columns)}")
+        
         col_sports = find_column(df, ['Sports Category', 'Sport Category'])
         col_factory = find_column(df, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
         col_article_name = find_column(df, ['Model Name Short', 'Article NAME', 'Article Name'])
@@ -996,6 +999,8 @@ if uploaded_file is not None:
         col_leading_buy = find_column(df, ['Leading Buy Ready Date', 'LeadingBuyReadyDate'])
         col_weight = find_column(df, ['Product Weight', 'ProductWeight', 'Product Weight (g)', 'Weight', 'Prod Weight'])
         col_lifecycle = find_column(df, ['Article Season Lifecycle State', 'Lifecycle State', 'Season Lifecycle State', 'LifecycleState'])
+        
+        print(f"[DEBUG] Column mapping: sports={col_sports}, factory={col_factory}, article_name={col_article_name}, model={col_model}, article_number={col_article_number}")
         
         # Debug: warn about unmapped columns
         unmapped = []
@@ -1012,11 +1017,22 @@ if uploaded_file is not None:
         if col_sports and col_article_number:
             df[col_sports] = df[col_sports].astype(str).str.upper().str.strip()
             df_filtered = df[df[col_sports].isin(ALLOWED_SPORTS)]
+            print(f"[DEBUG] After sports filter: {len(df_filtered)} rows (from {len(df)})")
+            
+            if col_sports:
+                unique_sports = df[col_sports].unique().tolist()
+                print(f"[DEBUG] Unique sports in file: {unique_sports}")
             
             # Also filter by factory if column exists
             if col_factory:
                 df_filtered[col_factory] = df_filtered[col_factory].astype(str).str.upper().str.strip()
+                before_factory = len(df_filtered)
                 df_filtered = df_filtered[df_filtered[col_factory].isin(ALLOWED_FACTORIES)]
+                print(f"[DEBUG] After factory filter: {len(df_filtered)} rows (from {before_factory})")
+                if before_factory > 0 and len(df_filtered) == 0:
+                    unique_factories = df[col_factory].astype(str).str.upper().str.strip().unique().tolist()
+                    print(f"[DEBUG] Unique factories in file: {unique_factories}")
+                    st.warning(f"⚠️ Factory filter loại hết data. Các factory trong file: {', '.join(unique_factories[:20])}")
             
             if len(df_filtered) > 0:
                 save_data = pd.DataFrame({
@@ -1031,7 +1047,9 @@ if uploaded_file is not None:
                     'Lifecycle State': df_filtered[col_lifecycle] if col_lifecycle else None,
                 })
                 
+                print(f"[DEBUG] Saving {len(save_data)} rows to DB...")
                 inserted, updated, archived, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
+                print(f"[DEBUG] Save result: inserted={inserted}, updated={updated}, archived={archived}, skipped={skipped}")
                 
                 # Store in session state for highlighting
                 st.session_state.new_articles = new_articles
