@@ -989,7 +989,7 @@ if uploaded_file is not None:
         df = pd.read_excel(uploaded_file)
         col_sports = find_column(df, ['Sports Category', 'Sport Category'])
         col_factory = find_column(df, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
-        col_article_name = find_column(df, ['Article NAME', 'Article Name'])
+        col_article_name = find_column(df, ['Model Name Short', 'Article NAME', 'Article Name'])
         col_model = find_column(df, ['Model', 'MODEL'])
         col_article_number = find_column(df, ['Article NUMBER', 'Article Number'])
         col_pre_confirm = find_column(df, ['Pre-Confirm Date', 'PreConfirm Date'])
@@ -1061,7 +1061,7 @@ if uploaded_file is not None:
             df_sheet = pd.read_excel(uploaded_file, sheet_name=sheet)
             col_sports = find_column(df_sheet, ['Sports Category', 'Sport Category'])
             col_factory = find_column(df_sheet, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
-            col_article_name = find_column(df_sheet, ['Article NAME', 'Article Name'])
+            col_article_name = find_column(df_sheet, ['Model Name Short', 'Article NAME', 'Article Name'])
             col_model = find_column(df_sheet, ['Model', 'MODEL'])
             col_article_number = find_column(df_sheet, ['Article NUMBER', 'Article Number'])
             
