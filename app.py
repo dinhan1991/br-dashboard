@@ -1073,53 +1073,82 @@ if uploaded_file is not None:
         sheet_names = xl.sheet_names
         
         st.info(f"📋 Detected: **Drop Report** ({len(sheet_names)} sheets: {', '.join(sheet_names)})")
+        print(f"[DEBUG] Drop Report: {len(sheet_names)} sheets: {sheet_names}")
         
         all_data = []
-        for sheet in sheet_names:
-            df_sheet = pd.read_excel(uploaded_file, sheet_name=sheet)
-            col_sports = find_column(df_sheet, ['Sports Category', 'Sport Category'])
-            col_factory = find_column(df_sheet, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
-            col_article_name = find_column(df_sheet, ['Model Name Short', 'Article NAME', 'Article Name'])
-            col_model = find_column(df_sheet, ['Model', 'MODEL'])
-            col_article_number = find_column(df_sheet, ['Article NUMBER', 'Article Number'])
-            
-            if col_article_number:
-                # Get all data from sheet
-                sheet_data = pd.DataFrame({
-                    'Season': sheet,
-                    'Factory': df_sheet[col_factory].astype(str).str.upper().str.strip() if col_factory else '',
-                    'Sports Category': df_sheet[col_sports].astype(str).str.upper().str.strip() if col_sports else '',
-                    'Article NAME': df_sheet[col_article_name] if col_article_name else '',
-                    'Model': df_sheet[col_model] if col_model else '',
-                    'Article NUMBER': df_sheet[col_article_number] if col_article_number else '',
-                })
+        try:
+            for sheet in sheet_names:
+                df_sheet = pd.read_excel(uploaded_file, sheet_name=sheet)
+                print(f"[DEBUG] Sheet '{sheet}': {len(df_sheet)} rows, columns: {list(df_sheet.columns)}")
                 
-                # Filter by sports
-                if col_sports:
-                    sheet_data = sheet_data[sheet_data['Sports Category'].isin(ALLOWED_SPORTS)]
+                col_sports = find_column(df_sheet, ['Sports Category', 'Sport Category'])
+                col_factory = find_column(df_sheet, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
+                col_article_name = find_column(df_sheet, ['Model Name Short', 'Article NAME', 'Article Name'])
+                col_model = find_column(df_sheet, ['Model', 'MODEL'])
+                col_article_number = find_column(df_sheet, ['Article NUMBER', 'Article Number'])
                 
-                # Filter by factory (only HWA for Drop Report)
-                ALLOWED_FACTORIES_DROP = ['HWA']
-                if col_factory:
-                    sheet_data = sheet_data[sheet_data['Factory'].isin(ALLOWED_FACTORIES_DROP)]
+                print(f"[DEBUG] Sheet '{sheet}' columns: sports={col_sports}, factory={col_factory}, article_name={col_article_name}, article_number={col_article_number}")
                 
-                if len(sheet_data) > 0:
-                    all_data.append(sheet_data)
-        
-        if all_data:
-            combined = pd.concat(all_data, ignore_index=True)
-            inserted, updated, archived, skipped, new_articles, archived_list = save_drop_to_db(combined)
+                if col_article_number:
+                    # Get all data from sheet
+                    sheet_data = pd.DataFrame({
+                        'Season': sheet,
+                        'Factory': df_sheet[col_factory].astype(str).str.upper().str.strip() if col_factory else '',
+                        'Sports Category': df_sheet[col_sports].astype(str).str.upper().str.strip() if col_sports else '',
+                        'Article NAME': df_sheet[col_article_name] if col_article_name else '',
+                        'Model': df_sheet[col_model] if col_model else '',
+                        'Article NUMBER': df_sheet[col_article_number] if col_article_number else '',
+                    })
+                    
+                    before_sports = len(sheet_data)
+                    # Filter by sports
+                    if col_sports:
+                        unique_sports = sheet_data['Sports Category'].unique().tolist()
+                        print(f"[DEBUG] Sheet '{sheet}' unique sports: {unique_sports}")
+                        sheet_data = sheet_data[sheet_data['Sports Category'].isin(ALLOWED_SPORTS)]
+                    print(f"[DEBUG] Sheet '{sheet}' after sports filter: {len(sheet_data)} rows (from {before_sports})")
+                    
+                    # Filter by factory (only HWA for Drop Report)
+                    ALLOWED_FACTORIES_DROP = ['HWA']
+                    if col_factory:
+                        before_factory = len(sheet_data)
+                        unique_factories = sheet_data['Factory'].unique().tolist()
+                        print(f"[DEBUG] Sheet '{sheet}' unique factories: {unique_factories}")
+                        sheet_data = sheet_data[sheet_data['Factory'].isin(ALLOWED_FACTORIES_DROP)]
+                        print(f"[DEBUG] Sheet '{sheet}' after factory filter: {len(sheet_data)} rows (from {before_factory})")
+                    
+                    if len(sheet_data) > 0:
+                        all_data.append(sheet_data)
+                        print(f"[DEBUG] Sheet '{sheet}': {len(sheet_data)} rows added to save list")
+                    else:
+                        print(f"[DEBUG] Sheet '{sheet}': 0 rows after filtering - SKIPPED")
+                else:
+                    print(f"[DEBUG] Sheet '{sheet}': col_article_number not found - SKIPPED")
             
-            # Store new articles for DROP highlighting
-            st.session_state.drop_new_articles = new_articles
-            
-            msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{archived}** archived | **{skipped}** bỏ qua"
-            if new_articles:
-                msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:10])}" + ("..." if len(new_articles) > 10 else "")
-            if archived_list:
-                msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
-            st.success(msg)
-            st.rerun()
+            if all_data:
+                combined = pd.concat(all_data, ignore_index=True)
+                print(f"[DEBUG] Total Drop rows to save: {len(combined)}")
+                inserted, updated, archived, skipped, new_articles, archived_list = save_drop_to_db(combined)
+                print(f"[DEBUG] Drop save result: inserted={inserted}, updated={updated}, archived={archived}, skipped={skipped}")
+                
+                # Store new articles for DROP highlighting
+                st.session_state.drop_new_articles = new_articles
+                
+                msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{archived}** archived | **{skipped}** bỏ qua"
+                if new_articles:
+                    msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:10])}" + ("..." if len(new_articles) > 10 else "")
+                if archived_list:
+                    msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+                st.success(msg)
+                st.rerun()
+            else:
+                st.warning("⚠️ Drop Report: Không tìm thấy data phù hợp sau khi filter (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
+                print("[DEBUG] Drop Report: all_data is empty after filtering all sheets")
+        except Exception as e:
+            st.error(f"❌ Lỗi xử lý Drop Report: {str(e)}")
+            print(f"[DEBUG] Drop Report ERROR: {e}")
+            import traceback
+            traceback.print_exc()
 
     else:
         st.warning("⚠️ Không thể xác định loại file. Tên file cần chứa 'Buy Ready' hoặc 'Drop'")
