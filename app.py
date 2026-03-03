@@ -1202,7 +1202,11 @@ if len(br_data) > 0:
     
     df_br['Change'] = df_br['Article NUMBER'].apply(get_change_indicator)
     
-    df_br = df_br.sort_values('Leading Buy Ready Date', ascending=True, na_position='last')
+    df_br = df_br.sort_values(
+        by=['Leading Buy Ready Date', 'Model', 'Article NAME'],
+        ascending=[True, True, True],
+        na_position='last'
+    )
     df_br = df_br.reset_index(drop=True)
     df_br.insert(0, 'STT', range(1, len(df_br) + 1))
     
@@ -1671,6 +1675,30 @@ if len(drop_data) > 0:
     
     # Remove Factory column since only HWA is shown
     df_drop = df_drop.drop(columns=['Factory'])
+    
+    # Custom sort: Season (SS→FW chronological), then Model, then Article NAME
+    def season_sort_key(season):
+        """Convert season like 'SS 2027', 'FW 2026', 'SS27', 'FW27' to sortable number.
+        SS = 0, FW = 1 within each year. E.g. SS26=260, FW26=261, SS27=270, FW27=271"""
+        s = str(season).strip().upper()
+        prefix = 0 if s.startswith('SS') else 1
+        # Extract year number - could be 2-digit or 4-digit
+        import re
+        year_match = re.search(r'(\d+)', s)
+        if year_match:
+            year = int(year_match.group(1))
+            if year > 100:  # 4-digit year like 2027
+                year = year % 100
+            return year * 10 + prefix
+        return 9999  # Unknown seasons go last
+    
+    df_drop['_season_sort'] = df_drop['Season'].apply(season_sort_key)
+    df_drop = df_drop.sort_values(
+        by=['_season_sort', 'Model', 'Article NAME'],
+        ascending=[True, True, True],
+        na_position='last'
+    )
+    df_drop = df_drop.drop(columns=['_season_sort'])
     
     df_drop = df_drop.reset_index(drop=True)
     df_drop.insert(0, 'STT', range(1, len(df_drop) + 1))
