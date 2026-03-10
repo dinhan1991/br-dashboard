@@ -154,15 +154,16 @@ def safe_str(val, default=''):
     return s
 
 def save_to_db(df_new):
-    """Save Buy Ready data to database. Returns (inserted, updated, deleted, skipped, new_articles, changed_articles)"""
+    """Save Buy Ready data to database. Returns (inserted, updated, unchanged, skipped, new_articles, changed_articles, archived_list)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     inserted = 0
-    updated = 0
+    updated = 0  # Actually changed
+    unchanged = 0  # Existed but no data change
     skipped = 0
     new_articles = []  # List of new article numbers
-    changed_articles = []  # List of articles with changed Leading Buy Ready Date
+    changed_articles = {}  # {article_number: [list of changes]}
     
     # Get all article numbers from new file
     new_article_numbers = set()
@@ -171,11 +172,16 @@ def save_to_db(df_new):
         if article_number and article_number != 'nan':
             new_article_numbers.add(article_number)
     
-    # Get existing articles to compare Leading Buy Ready Date
+    # Get existing articles with full data for comparison
     existing_articles = {}
-    cursor.execute("SELECT article_number, leading_buy_ready_date FROM articles")
+    cursor.execute("""SELECT article_number, article_name, model, sports_category, 
+                      pre_confirm_date, leading_buy_ready_date, factory FROM articles""")
     for row in cursor.fetchall():
-        existing_articles[row[0]] = row[1]
+        existing_articles[row[0]] = {
+            'article_name': row[1] or '', 'model': row[2] or '',
+            'sports_category': row[3] or '', 'pre_confirm_date': row[4] or '',
+            'leading_buy_ready_date': row[5] or '', 'factory': row[6] or '',
+        }
     
     for _, row in df_new.iterrows():
         article_number = str(row.get('Article NUMBER', '')).strip()
@@ -199,44 +205,52 @@ def save_to_db(df_new):
             leading_buy = ''
         
         if article_number in existing_articles:
-            # Check if Leading Buy Ready Date changed
-            old_date = existing_articles[article_number] or ''
-            if old_date != str(leading_buy):
-                changed_articles.append(article_number)
+            old = existing_articles[article_number]
+            new_article_name = safe_str(row.get('Article NAME', ''))
+            new_model = safe_str(row.get('Model', ''))
+            new_leading = safe_str(leading_buy)
+            new_preconfirm = safe_str(pre_confirm)
             
-            # Build dynamic UPDATE - only update fields that have values
+            # Detect actual changes
+            changes = []
+            if old['leading_buy_ready_date'] != new_leading:
+                changes.append(f"BR Date: {old['leading_buy_ready_date'][:10] if old['leading_buy_ready_date'] else '—'} → {new_leading[:10] if new_leading else '—'}")
+            if old['pre_confirm_date'] != new_preconfirm:
+                changes.append(f"Pre-Confirm changed")
+            if new_article_name and old['article_name'] != new_article_name:
+                changes.append(f"Name: {old['article_name'] or '—'} → {new_article_name}")
+            if old['model'] != new_model:
+                changes.append(f"Model: {old['model'] or '—'} → {new_model}")
+            
+            # Build dynamic UPDATE
             update_fields = {
                 'factory': safe_str(row.get('Factory', '')),
                 'sports_category': safe_str(row.get('Sports Category', '')),
-                'model': safe_str(row.get('Model', '')),
-                'pre_confirm_date': safe_str(pre_confirm),
-                'leading_buy_ready_date': safe_str(leading_buy),
+                'model': new_model,
+                'pre_confirm_date': new_preconfirm,
+                'leading_buy_ready_date': new_leading,
                 'updated_at': now,
             }
             
-            # Only overwrite article_name if Excel has a non-empty value
-            new_article_name = safe_str(row.get('Article NAME', ''))
             if new_article_name:
                 update_fields['article_name'] = new_article_name
             
-            # Only update weight/lifecycle if column was found in Excel (not None)
             weight_val = row.get('Product Weight')
             lifecycle_val = row.get('Lifecycle State')
-            
             if weight_val is not None and not (isinstance(weight_val, float) and pd.isna(weight_val)):
                 update_fields['product_weight'] = str(weight_val)
-            
             if lifecycle_val is not None and not (isinstance(lifecycle_val, float) and pd.isna(lifecycle_val)):
                 update_fields['lifecycle_state'] = str(lifecycle_val)
             
             set_clause = ', '.join([f'{k} = %s' for k in update_fields.keys()])
             values = list(update_fields.values()) + [article_number]
+            cursor.execute(f'''UPDATE articles SET {set_clause} WHERE article_number = %s''', values)
             
-            cursor.execute(f'''
-                UPDATE articles SET {set_clause}
-                WHERE article_number = %s
-            ''', values)
-            updated += 1
+            if changes:
+                updated += 1
+                changed_articles[article_number] = changes
+            else:
+                unchanged += 1
         else:
             new_articles.append(article_number)
             cursor.execute('''
@@ -280,17 +294,19 @@ def save_to_db(df_new):
     
     conn.commit()
     conn.close()
-    return inserted, updated, archived, skipped, new_articles, changed_articles, archived_list
+    return inserted, updated, unchanged, skipped, new_articles, changed_articles, archived_list
 
 def save_drop_to_db(df_new):
-    """Save Drop Report data to database. Returns (inserted, updated, archived, skipped, new_articles, archived_list)"""
+    """Save Drop Report data to database. Returns (inserted, updated, unchanged, archived, skipped, new_articles, changed_articles, archived_list)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     inserted = 0
-    updated = 0
+    updated = 0  # Actually changed
+    unchanged = 0
     skipped = 0
     new_articles = []  # Track new article numbers
+    changed_articles = {}  # {article_number: [changes]}
     
     # Get all season+article combinations from new file
     new_article_keys = set()
@@ -300,11 +316,14 @@ def save_drop_to_db(df_new):
         if article_number and article_number != 'nan' and season:
             new_article_keys.add((season, article_number))
     
-    # Get existing articles
+    # Get existing articles with full data
     existing_articles = {}
-    cursor.execute("SELECT season, article_number, id FROM drop_articles")
+    cursor.execute("SELECT season, article_number, id, article_name, model, sports_category FROM drop_articles")
     for row in cursor.fetchall():
-        existing_articles[(row[0], row[1])] = row[2]
+        existing_articles[(row[0], row[1])] = {
+            'id': row[2], 'article_name': row[3] or '',
+            'model': row[4] or '', 'sports_category': row[5] or '',
+        }
     
     for _, row in df_new.iterrows():
         article_number = str(row.get('Article NUMBER', '')).strip()
@@ -318,24 +337,36 @@ def save_drop_to_db(df_new):
         key = (season, article_number)
         
         if key in existing_articles:
-            # Build dynamic UPDATE - preserve article_name if Excel is empty
+            old = existing_articles[key]
+            new_drop_name = safe_str(row.get('Article NAME', ''))
+            new_model = safe_str(row.get('Model', ''))
+            
+            # Detect actual changes
+            changes = []
+            if new_drop_name and old['article_name'] != new_drop_name:
+                changes.append(f"Name: {old['article_name'] or '—'} → {new_drop_name}")
+            if old['model'] != new_model:
+                changes.append(f"Model: {old['model'] or '—'} → {new_model}")
+            
+            # Build dynamic UPDATE
             drop_update = {
                 'factory': safe_str(row.get('Factory', '')),
                 'sports_category': safe_str(row.get('Sports Category', '')),
-                'model': safe_str(row.get('Model', '')),
+                'model': new_model,
                 'updated_at': now,
             }
-            new_drop_name = safe_str(row.get('Article NAME', ''))
             if new_drop_name:
                 drop_update['article_name'] = new_drop_name
             
             set_clause = ', '.join([f'{k} = %s' for k in drop_update.keys()])
             values = list(drop_update.values()) + [season, article_number]
-            cursor.execute(f'''
-                UPDATE drop_articles SET {set_clause}
-                WHERE season = %s AND article_number = %s
-            ''', values)
-            updated += 1
+            cursor.execute(f'''UPDATE drop_articles SET {set_clause} WHERE season = %s AND article_number = %s''', values)
+            
+            if changes:
+                updated += 1
+                changed_articles[article_number] = changes
+            else:
+                unchanged += 1
         else:
             new_articles.append(article_number)  # Track as NEW
             cursor.execute('''
@@ -373,7 +404,7 @@ def save_drop_to_db(df_new):
     
     conn.commit()
     conn.close()
-    return inserted, updated, archived, skipped, new_articles, archived_list
+    return inserted, updated, unchanged, archived, skipped, new_articles, changed_articles, archived_list
 
 def update_all_statuses(df):
     """Update all status columns from dataframe"""
@@ -1048,22 +1079,30 @@ if uploaded_file is not None:
                 })
                 
                 print(f"[DEBUG] Saving {len(save_data)} rows to DB...")
-                inserted, updated, archived, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
-                print(f"[DEBUG] Save result: inserted={inserted}, updated={updated}, archived={archived}, skipped={skipped}")
+                inserted, updated, unchanged, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
+                print(f"[DEBUG] Save result: inserted={inserted}, updated={updated}, unchanged={unchanged}, archived={len(archived_list)}, skipped={skipped}")
                 
                 # Store in session state for highlighting
                 st.session_state.new_articles = new_articles
-                st.session_state.changed_articles = changed_articles
+                st.session_state.changed_articles = list(changed_articles.keys())
                 
                 # Show summary
-                msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{archived}** archived | **{skipped}** bỏ qua"
-                if new_articles:
-                    msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:10])}" + ("..." if len(new_articles) > 10 else "")
-                if changed_articles:
-                    msg += f"\n\n📅 **Date thay đổi:** {', '.join(changed_articles[:10])}" + ("..." if len(changed_articles) > 10 else "")
-                if archived_list:
-                    msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
-                st.success(msg)
+                total_changes = inserted + updated + len(archived_list)
+                if total_changes == 0:
+                    st.info(f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua.")
+                else:
+                    msg = f"✅ **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{len(archived_list)}** archived"
+                    if new_articles:
+                        msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
+                    if changed_articles:
+                        msg += f"\n\n📝 **Articles thay đổi:**"
+                        for art, changes in list(changed_articles.items())[:15]:
+                            msg += f"\n- `{art}`: {' | '.join(changes)}"
+                        if len(changed_articles) > 15:
+                            msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
+                    if archived_list:
+                        msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+                    st.success(msg)
             else:
                 st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
     
@@ -1128,18 +1167,28 @@ if uploaded_file is not None:
             if all_data:
                 combined = pd.concat(all_data, ignore_index=True)
                 print(f"[DEBUG] Total Drop rows to save: {len(combined)}")
-                inserted, updated, archived, skipped, new_articles, archived_list = save_drop_to_db(combined)
-                print(f"[DEBUG] Drop save result: inserted={inserted}, updated={updated}, archived={archived}, skipped={skipped}")
+                inserted, updated, unchanged, archived, skipped, new_articles, changed_articles, archived_list = save_drop_to_db(combined)
+                print(f"[DEBUG] Drop save result: inserted={inserted}, updated={updated}, unchanged={unchanged}, archived={archived}, skipped={skipped}")
                 
                 # Store new articles for DROP highlighting
                 st.session_state.drop_new_articles = new_articles
                 
-                msg = f"✅ **{inserted}** mới | **{updated}** cập nhật | **{archived}** archived | **{skipped}** bỏ qua"
-                if new_articles:
-                    msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:10])}" + ("..." if len(new_articles) > 10 else "")
-                if archived_list:
-                    msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
-                st.success(msg)
+                total_changes = inserted + updated + archived
+                if total_changes == 0:
+                    st.info(f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua.")
+                else:
+                    msg = f"✅ **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{archived}** archived"
+                    if new_articles:
+                        msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
+                    if changed_articles:
+                        msg += f"\n\n📝 **Articles thay đổi:**"
+                        for art, changes in list(changed_articles.items())[:15]:
+                            msg += f"\n- `{art}`: {' | '.join(changes)}"
+                        if len(changed_articles) > 15:
+                            msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
+                    if archived_list:
+                        msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+                    st.success(msg)
                 st.rerun()
             else:
                 st.warning("⚠️ Drop Report: Không tìm thấy data phù hợp sau khi filter (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
