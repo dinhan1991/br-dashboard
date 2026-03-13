@@ -1032,7 +1032,7 @@ if uploaded_file is not None:
             col_factory = find_column(df, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
             col_article_name = find_column(df, ['Model Name Short', 'Article NAME', 'Article Name'])
             col_model = find_column(df, ['Model', 'MODEL'])
-            col_article_number = find_column(df, ['Article NUMBER', 'Article Number'])
+            col_article_number = find_column(df, ['Article NUMBER', 'Article Number', 'Article'])
             col_pre_confirm = find_column(df, ['Pre-Confirm Date', 'PreConfirm Date'])
             col_leading_buy = find_column(df, ['Leading Buy Ready Date', 'LeadingBuyReadyDate'])
             col_weight = find_column(df, ['Product Weight', 'ProductWeight', 'Product Weight (g)', 'Weight', 'Prod Weight'])
@@ -1139,7 +1139,7 @@ if uploaded_file is not None:
                 col_factory = find_column(df_sheet, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
                 col_article_name = find_column(df_sheet, ['Model Name Short', 'Article NAME', 'Article Name'])
                 col_model = find_column(df_sheet, ['Model', 'MODEL'])
-                col_article_number = find_column(df_sheet, ['Article NUMBER', 'Article Number'])
+                col_article_number = find_column(df_sheet, ['Article NUMBER', 'Article Number', 'Article'])
                 
                 print(f"[DEBUG] Sheet '{sheet}' columns: sports={col_sports}, factory={col_factory}, article_name={col_article_name}, article_number={col_article_number}")
                 
