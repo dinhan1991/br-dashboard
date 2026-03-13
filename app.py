@@ -214,13 +214,17 @@ def save_to_db(df_new):
             # Detect actual changes
             changes = []
             if old['leading_buy_ready_date'] != new_leading:
-                changes.append(f"BR Date: {old['leading_buy_ready_date'][:10] if old['leading_buy_ready_date'] else '—'} → {new_leading[:10] if new_leading else '—'}")
+                old_br = old['leading_buy_ready_date'][:10] if old['leading_buy_ready_date'] else '\u2014'
+                new_br = new_leading[:10] if new_leading else '\u2014'
+                changes.append(f"BR Date: {old_br} \u2192 {new_br}")
             if old['pre_confirm_date'] != new_preconfirm:
-                changes.append(f"Pre-Confirm changed")
+                changes.append("Pre-Confirm changed")
             if new_article_name and old['article_name'] != new_article_name:
-                changes.append(f"Name: {old['article_name'] or '—'} → {new_article_name}")
+                old_name = old['article_name'] or '\u2014'
+                changes.append(f"Name: {old_name} \u2192 {new_article_name}")
             if old['model'] != new_model:
-                changes.append(f"Model: {old['model'] or '—'} → {new_model}")
+                old_model = old['model'] or '\u2014'
+                changes.append(f"Model: {old_model} \u2192 {new_model}")
             
             # Build dynamic UPDATE
             update_fields = {
@@ -344,9 +348,11 @@ def save_drop_to_db(df_new):
             # Detect actual changes
             changes = []
             if new_drop_name and old['article_name'] != new_drop_name:
-                changes.append(f"Name: {old['article_name'] or '—'} → {new_drop_name}")
+                old_name = old['article_name'] or '\u2014'
+                changes.append(f"Name: {old_name} \u2192 {new_drop_name}")
             if old['model'] != new_model:
-                changes.append(f"Model: {old['model'] or '—'} → {new_model}")
+                old_mdl = old['model'] or '\u2014'
+                changes.append(f"Model: {old_mdl} \u2192 {new_model}")
             
             # Build dynamic UPDATE
             drop_update = {
@@ -1018,93 +1024,102 @@ if uploaded_file is not None:
     if file_type == 'buy_ready':
         st.info("📋 Detected: **Buy Ready Report**")
         
-        df = pd.read_excel(uploaded_file)
-        print(f"[DEBUG] Excel loaded: {len(df)} rows, columns: {list(df.columns)}")
-        
-        col_sports = find_column(df, ['Sports Category', 'Sport Category'])
-        col_factory = find_column(df, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
-        col_article_name = find_column(df, ['Model Name Short', 'Article NAME', 'Article Name'])
-        col_model = find_column(df, ['Model', 'MODEL'])
-        col_article_number = find_column(df, ['Article NUMBER', 'Article Number'])
-        col_pre_confirm = find_column(df, ['Pre-Confirm Date', 'PreConfirm Date'])
-        col_leading_buy = find_column(df, ['Leading Buy Ready Date', 'LeadingBuyReadyDate'])
-        col_weight = find_column(df, ['Product Weight', 'ProductWeight', 'Product Weight (g)', 'Weight', 'Prod Weight'])
-        col_lifecycle = find_column(df, ['Article Season Lifecycle State', 'Lifecycle State', 'Season Lifecycle State', 'LifecycleState'])
-        
-        print(f"[DEBUG] Column mapping: sports={col_sports}, factory={col_factory}, article_name={col_article_name}, model={col_model}, article_number={col_article_number}")
-        
-        # Debug: warn about unmapped columns
-        unmapped = []
-        if not col_weight:
-            unmapped.append('Product Weight')
-        if not col_lifecycle:
-            unmapped.append('Lifecycle State')
-        if unmapped:
-            st.warning(f"⚠️ Không tìm thấy cột: **{', '.join(unmapped)}** trong file Excel. Dữ liệu cũ sẽ được giữ nguyên.\n\nCác cột trong file: {', '.join(df.columns.tolist())}")
-        
-        # Allowed factories (HWA only - matches global constant)
-        ALLOWED_FACTORIES = ['HWA']
-        
-        if col_sports and col_article_number:
-            df[col_sports] = df[col_sports].astype(str).str.upper().str.strip()
-            df_filtered = df[df[col_sports].isin(ALLOWED_SPORTS)]
-            print(f"[DEBUG] After sports filter: {len(df_filtered)} rows (from {len(df)})")
+        try:
+            df = pd.read_excel(uploaded_file)
+            print(f"[DEBUG] Excel loaded: {len(df)} rows, columns: {list(df.columns)}")
             
-            if col_sports:
+            col_sports = find_column(df, ['Sports Category', 'Sport Category'])
+            col_factory = find_column(df, ['T1 Factory Short Code', 'T1 Factory', 'Factory Short Code', 'Factory'])
+            col_article_name = find_column(df, ['Model Name Short', 'Article NAME', 'Article Name'])
+            col_model = find_column(df, ['Model', 'MODEL'])
+            col_article_number = find_column(df, ['Article NUMBER', 'Article Number'])
+            col_pre_confirm = find_column(df, ['Pre-Confirm Date', 'PreConfirm Date'])
+            col_leading_buy = find_column(df, ['Leading Buy Ready Date', 'LeadingBuyReadyDate'])
+            col_weight = find_column(df, ['Product Weight', 'ProductWeight', 'Product Weight (g)', 'Weight', 'Prod Weight'])
+            col_lifecycle = find_column(df, ['Article Season Lifecycle State', 'Lifecycle State', 'Season Lifecycle State', 'LifecycleState'])
+            
+            print(f"[DEBUG] Column mapping: sports={col_sports}, factory={col_factory}, article_name={col_article_name}, model={col_model}, article_number={col_article_number}")
+            print(f"[DEBUG] Extra columns: pre_confirm={col_pre_confirm}, leading_buy={col_leading_buy}, weight={col_weight}, lifecycle={col_lifecycle}")
+            
+            # Debug: warn about unmapped columns
+            unmapped = []
+            if not col_weight:
+                unmapped.append('Product Weight')
+            if not col_lifecycle:
+                unmapped.append('Lifecycle State')
+            if unmapped:
+                st.warning(f"⚠️ Không tìm thấy cột: **{', '.join(unmapped)}** trong file Excel. Dữ liệu cũ sẽ được giữ nguyên.\n\nCác cột trong file: {', '.join(df.columns.tolist())}")
+            
+            # Allowed factories (HWA only - matches global constant)
+            ALLOWED_FACTORIES = ['HWA']
+            
+            if col_sports and col_article_number:
+                df[col_sports] = df[col_sports].astype(str).str.upper().str.strip()
+                df_filtered = df[df[col_sports].isin(ALLOWED_SPORTS)]
+                print(f"[DEBUG] After sports filter: {len(df_filtered)} rows (from {len(df)})")
+                
                 unique_sports = df[col_sports].unique().tolist()
                 print(f"[DEBUG] Unique sports in file: {unique_sports}")
-            
-            # Also filter by factory if column exists
-            if col_factory:
-                df_filtered[col_factory] = df_filtered[col_factory].astype(str).str.upper().str.strip()
-                before_factory = len(df_filtered)
-                df_filtered = df_filtered[df_filtered[col_factory].isin(ALLOWED_FACTORIES)]
-                print(f"[DEBUG] After factory filter: {len(df_filtered)} rows (from {before_factory})")
-                if before_factory > 0 and len(df_filtered) == 0:
-                    unique_factories = df[col_factory].astype(str).str.upper().str.strip().unique().tolist()
-                    print(f"[DEBUG] Unique factories in file: {unique_factories}")
-                    st.warning(f"⚠️ Factory filter loại hết data. Các factory trong file: {', '.join(unique_factories[:20])}")
-            
-            if len(df_filtered) > 0:
-                save_data = pd.DataFrame({
-                    'Factory': df_filtered[col_factory].astype(str).str.upper().str.strip() if col_factory else '',
-                    'Sports Category': df_filtered[col_sports] if col_sports else '',
-                    'Article NAME': df_filtered[col_article_name] if col_article_name else '',
-                    'Model': df_filtered[col_model] if col_model else '',
-                    'Article NUMBER': df_filtered[col_article_number] if col_article_number else '',
-                    'Pre-Confirm Date': df_filtered[col_pre_confirm] if col_pre_confirm else '',
-                    'Leading Buy Ready Date': df_filtered[col_leading_buy] if col_leading_buy else '',
-                    'Product Weight': df_filtered[col_weight] if col_weight else None,
-                    'Lifecycle State': df_filtered[col_lifecycle] if col_lifecycle else None,
-                })
                 
-                print(f"[DEBUG] Saving {len(save_data)} rows to DB...")
-                inserted, updated, unchanged, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
-                print(f"[DEBUG] Save result: inserted={inserted}, updated={updated}, unchanged={unchanged}, archived={len(archived_list)}, skipped={skipped}")
+                # Also filter by factory if column exists
+                if col_factory:
+                    df_filtered[col_factory] = df_filtered[col_factory].astype(str).str.upper().str.strip()
+                    before_factory = len(df_filtered)
+                    df_filtered = df_filtered[df_filtered[col_factory].isin(ALLOWED_FACTORIES)]
+                    print(f"[DEBUG] After factory filter: {len(df_filtered)} rows (from {before_factory})")
+                    if before_factory > 0 and len(df_filtered) == 0:
+                        unique_factories = df[col_factory].astype(str).str.upper().str.strip().unique().tolist()
+                        print(f"[DEBUG] Unique factories in file: {unique_factories}")
+                        st.warning(f"⚠️ Factory filter loại hết data. Các factory trong file: {', '.join(unique_factories[:20])}")
                 
-                # Store in session state for highlighting
-                st.session_state.new_articles = new_articles
-                st.session_state.changed_articles = list(changed_articles.keys())
-                
-                # Show summary
-                total_changes = inserted + updated + len(archived_list)
-                if total_changes == 0:
-                    st.info(f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua.")
+                if len(df_filtered) > 0:
+                    save_data = pd.DataFrame({
+                        'Factory': df_filtered[col_factory].astype(str).str.upper().str.strip() if col_factory else '',
+                        'Sports Category': df_filtered[col_sports] if col_sports else '',
+                        'Article NAME': df_filtered[col_article_name] if col_article_name else '',
+                        'Model': df_filtered[col_model] if col_model else '',
+                        'Article NUMBER': df_filtered[col_article_number] if col_article_number else '',
+                        'Pre-Confirm Date': df_filtered[col_pre_confirm] if col_pre_confirm else '',
+                        'Leading Buy Ready Date': df_filtered[col_leading_buy] if col_leading_buy else '',
+                        'Product Weight': df_filtered[col_weight] if col_weight else None,
+                        'Lifecycle State': df_filtered[col_lifecycle] if col_lifecycle else None,
+                    })
+                    
+                    print(f"[DEBUG] Saving {len(save_data)} rows to DB...")
+                    inserted, updated, unchanged, skipped, new_articles, changed_articles, archived_list = save_to_db(save_data)
+                    print(f"[DEBUG] Save result: inserted={inserted}, updated={updated}, unchanged={unchanged}, archived={len(archived_list)}, skipped={skipped}")
+                    
+                    # Store in session state for highlighting
+                    st.session_state.new_articles = new_articles
+                    st.session_state.changed_articles = list(changed_articles.keys())
+                    
+                    # Show summary
+                    total_changes = inserted + updated + len(archived_list)
+                    if total_changes == 0:
+                        st.info(f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua.")
+                    else:
+                        msg = f"✅ **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{len(archived_list)}** archived"
+                        if new_articles:
+                            msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
+                        if changed_articles:
+                            msg += f"\n\n📝 **Articles thay đổi:**"
+                            for art, changes in list(changed_articles.items())[:15]:
+                                msg += f"\n- `{art}`: {' | '.join(changes)}"
+                            if len(changed_articles) > 15:
+                                msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
+                        if archived_list:
+                            msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+                        st.success(msg)
+                    st.rerun()
                 else:
-                    msg = f"✅ **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{len(archived_list)}** archived"
-                    if new_articles:
-                        msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
-                    if changed_articles:
-                        msg += f"\n\n📝 **Articles thay đổi:**"
-                        for art, changes in list(changed_articles.items())[:15]:
-                            msg += f"\n- `{art}`: {' | '.join(changes)}"
-                        if len(changed_articles) > 15:
-                            msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
-                    if archived_list:
-                        msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
-                    st.success(msg)
+                    st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
             else:
-                st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
+                st.error(f"❌ Không tìm thấy cột bắt buộc: Sports Category={'✅' if col_sports else '❌'}, Article Number={'✅' if col_article_number else '❌'}\n\nCác cột trong file: {', '.join(df.columns.tolist())}")
+        except Exception as e:
+            st.error(f"❌ Lỗi xử lý Buy Ready Report: {str(e)}")
+            print(f"[DEBUG] Buy Ready ERROR: {e}")
+            import traceback
+            traceback.print_exc()
     
     elif file_type == 'drop_report':
         # Get all sheet names
