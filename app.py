@@ -1314,8 +1314,8 @@ if len(br_data) > 0:
         if 'PENDING' in all_statuses or 'ETD' in all_statuses or 'ETC' in all_statuses or 'SENT' in all_statuses:
             return '🔴 PENDING'
         
-        # Check if PASSED
-        if mcs == 'APPROVED' and fgt == 'PASSED':
+        # Check if PASSED - fgt can be 'PASSED', 'PASSED (FD approved)', etc.
+        if mcs == 'APPROVED' and fgt.startswith('PASSED'):
             return '✅ PASSED'
         
         return '🔄 Processing'
