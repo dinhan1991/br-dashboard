@@ -1018,10 +1018,19 @@ with st.sidebar:
 
 # Process uploaded file
 if uploaded_file is not None:
-    file_type = detect_file_type(uploaded_file)
-    print(f"[DEBUG] File uploaded: {uploaded_file.name}, detected type: {file_type}")
+    # Guard: skip re-processing if this exact file was already processed
+    file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+    already_processed = st.session_state.get('last_processed_file') == file_key
     
-    if file_type == 'buy_ready':
+    file_type = detect_file_type(uploaded_file)
+    print(f"[DEBUG] File uploaded: {uploaded_file.name}, detected type: {file_type}, already_processed: {already_processed}")
+    
+    if already_processed:
+        st.info(f"✅ File **{uploaded_file.name}** đã được xử lý. Upload file mới hoặc upload lại để cập nhật.")
+    elif file_type == 'unknown':
+        st.warning("⚠️ Không thể xác định loại file. Tên file cần chứa 'Buy Ready' hoặc 'Drop'")
+    
+    elif file_type == 'buy_ready':
         st.info("📋 Detected: **Buy Ready Report**")
         
         try:
@@ -1110,6 +1119,7 @@ if uploaded_file is not None:
                         if archived_list:
                             msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
                         st.success(msg)
+                    st.session_state['last_processed_file'] = file_key
                     st.rerun()
                 else:
                     st.warning("⚠️ Không tìm thấy data phù hợp (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
@@ -1121,7 +1131,7 @@ if uploaded_file is not None:
             import traceback
             traceback.print_exc()
     
-    elif file_type == 'drop_report':
+    elif file_type == 'drop_report':  # noqa
         # Get all sheet names
         xl = pd.ExcelFile(uploaded_file)
         sheet_names = xl.sheet_names
@@ -1204,6 +1214,7 @@ if uploaded_file is not None:
                     if archived_list:
                         msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
                     st.success(msg)
+                st.session_state['last_processed_file'] = file_key
                 st.rerun()
             else:
                 st.warning("⚠️ Drop Report: Không tìm thấy data phù hợp sau khi filter (Sports: AMERICAN FOOTBALL, BASEBALL, SOFTBALL | Factory: HWA)")
@@ -1214,8 +1225,7 @@ if uploaded_file is not None:
             import traceback
             traceback.print_exc()
 
-    else:
-        st.warning("⚠️ Không thể xác định loại file. Tên file cần chứa 'Buy Ready' hoặc 'Drop'")
+    # 'unknown' file_type is handled above in the guard block
 
 # ==================== BR SECTION ====================
 br_data = load_from_db()
