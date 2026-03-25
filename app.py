@@ -1026,7 +1026,14 @@ if uploaded_file is not None:
     print(f"[DEBUG] File uploaded: {uploaded_file.name}, detected type: {file_type}, already_processed: {already_processed}")
     
     if already_processed:
-        st.info(f"✅ File **{uploaded_file.name}** đã được xử lý. Upload file mới hoặc upload lại để cập nhật.")
+        # Show the stored result from the processing
+        last_result = st.session_state.get('last_process_result', '')
+        last_result_type = st.session_state.get('last_process_result_type', 'success')
+        if last_result:
+            if last_result_type == 'info':
+                st.info(last_result)
+            else:
+                st.success(last_result)
     elif file_type == 'unknown':
         st.warning("⚠️ Không thể xác định loại file. Tên file cần chứa 'Buy Ready' hoặc 'Drop'")
     
@@ -1105,20 +1112,23 @@ if uploaded_file is not None:
                     # Show summary
                     total_changes = inserted + updated + len(archived_list)
                     if total_changes == 0:
-                        st.info(f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua.")
+                        result_msg = f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua."
+                        st.session_state['last_process_result'] = result_msg
+                        st.session_state['last_process_result_type'] = 'info'
                     else:
-                        msg = f"✅ **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{len(archived_list)}** archived"
+                        result_msg = f"✅ **Buy Ready Report** — **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{len(archived_list)}** archived"
                         if new_articles:
-                            msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
+                            result_msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
                         if changed_articles:
-                            msg += f"\n\n📝 **Articles thay đổi:**"
+                            result_msg += f"\n\n📝 **Articles thay đổi:**"
                             for art, changes in list(changed_articles.items())[:15]:
-                                msg += f"\n- `{art}`: {' | '.join(changes)}"
+                                result_msg += f"\n- `{art}`: {' | '.join(changes)}"
                             if len(changed_articles) > 15:
-                                msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
+                                result_msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
                         if archived_list:
-                            msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
-                        st.success(msg)
+                            result_msg += f"\n\n📦 **Archived (hoàn thành):** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+                        st.session_state['last_process_result'] = result_msg
+                        st.session_state['last_process_result_type'] = 'success'
                     st.session_state['last_processed_file'] = file_key
                     st.rerun()
                 else:
@@ -1200,20 +1210,23 @@ if uploaded_file is not None:
                 
                 total_changes = inserted + updated + archived
                 if total_changes == 0:
-                    st.info(f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua.")
+                    result_msg = f"ℹ️ **Không có thay đổi nào.** {unchanged} articles giữ nguyên, {skipped} bỏ qua."
+                    st.session_state['last_process_result'] = result_msg
+                    st.session_state['last_process_result_type'] = 'info'
                 else:
-                    msg = f"✅ **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{archived}** archived"
+                    result_msg = f"✅ **Drop Report** — **{inserted}** mới | **{updated}** thay đổi | **{unchanged}** giữ nguyên | **{archived}** archived"
                     if new_articles:
-                        msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
+                        result_msg += f"\n\n🆕 **Articles mới:** {', '.join(new_articles[:15])}" + ("..." if len(new_articles) > 15 else "")
                     if changed_articles:
-                        msg += f"\n\n📝 **Articles thay đổi:**"
+                        result_msg += f"\n\n📝 **Articles thay đổi:**"
                         for art, changes in list(changed_articles.items())[:15]:
-                            msg += f"\n- `{art}`: {' | '.join(changes)}"
+                            result_msg += f"\n- `{art}`: {' | '.join(changes)}"
                         if len(changed_articles) > 15:
-                            msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
+                            result_msg += f"\n- ...và {len(changed_articles) - 15} articles khác"
                     if archived_list:
-                        msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
-                    st.success(msg)
+                        result_msg += f"\n\n📦 **Archived:** {', '.join(archived_list[:10])}" + ("..." if len(archived_list) > 10 else "")
+                    st.session_state['last_process_result'] = result_msg
+                    st.session_state['last_process_result_type'] = 'success'
                 st.session_state['last_processed_file'] = file_key
                 st.rerun()
             else:
