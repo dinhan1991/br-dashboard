@@ -1300,16 +1300,53 @@ if len(br_data) > 0:
     # Filters - Reorganized 2x2 layout (Factory removed - HWA only)
     st.markdown("#### 🔍 Bộ lọc")
     
+    # Check if chart click set a filter
+    chart_selected_date = st.session_state.get('chart_filter_date', None)
+    chart_selected_sport = st.session_state.get('chart_filter_sport', None)
+    
+    # Show active chart filter banner + clear button
+    if chart_selected_date or chart_selected_sport:
+        filter_parts = []
+        if chart_selected_date:
+            filter_parts.append(f"📅 {chart_selected_date}")
+        if chart_selected_sport:
+            filter_parts.append(f"🏈 {chart_selected_sport}")
+        col_banner, col_clear = st.columns([4, 1])
+        with col_banner:
+            st.info(f"📊 Chart filter active: {' | '.join(filter_parts)}")
+        with col_clear:
+            if st.button("❌ Clear filter", key='clear_chart_filter'):
+                st.session_state.pop('chart_filter_date', None)
+                st.session_state.pop('chart_filter_sport', None)
+                st.rerun()
+    
     # Row 1: Sports + Date
     col_f1, col_f2 = st.columns(2)
     with col_f1:
         sports_list = df_br['Sports Category'].unique().tolist()
-        selected_sport = st.selectbox("🏈 Sports Category", ['-- Tất cả --'] + sports_list, key='br_sport')
+        # Map chart sport group back to category
+        sport_default = 0  # '-- Tất cả --'
+        if chart_selected_sport:
+            if chart_selected_sport == 'American Football' and 'AMERICAN FOOTBALL' in sports_list:
+                sport_default = sports_list.index('AMERICAN FOOTBALL') + 1  # +1 for '-- Tất cả --'
+            # Dugout = skip, show all (can't map to single category)
+        selected_sport = st.selectbox("🏈 Sports Category", ['-- Tất cả --'] + sports_list, index=sport_default, key='br_sport')
     with col_f2:
         dates = df_br['Leading Buy Ready Date'].dropna().dt.date.unique()
         dates_sorted = sorted(dates) if len(dates) > 0 else []
         date_opts = ['-- Tất cả --'] + [str(d) for d in dates_sorted]
-        selected_date = st.selectbox("📅 Leading Buy Ready Date", date_opts, key='br_date')
+        date_default = 0  # '-- Tất cả --'
+        if chart_selected_date:
+            # chart_selected_date is like '05/25/2026', need to match YYYY-MM-DD
+            try:
+                from datetime import datetime as dt_parse
+                parsed = dt_parse.strptime(chart_selected_date, '%m/%d/%Y').date()
+                date_str = str(parsed)
+                if date_str in date_opts:
+                    date_default = date_opts.index(date_str)
+            except:
+                pass
+        selected_date = st.selectbox("📅 Leading Buy Ready Date", date_opts, index=date_default, key='br_date')
     
     # Row 2: Search + Status
     col_f3, col_f4 = st.columns(2)
@@ -1511,7 +1548,24 @@ if len(br_data) > 0:
                     )
                 )
                 
-                st.plotly_chart(fig_grouped, use_container_width=True)
+                # Interactive chart - click to filter
+                event = st.plotly_chart(fig_grouped, use_container_width=True, on_select='rerun', key='chart_date_sport')
+                
+                # Handle chart click events
+                if event and event.selection and event.selection.points:
+                    point = event.selection.points[0]
+                    clicked_date = point.get('y', None)  # date_label from y-axis
+                    # Determine sport from curve number (0=Am.Football, 1=Dugout)
+                    curve_num = point.get('curve_number', 0)
+                    clicked_sport = 'American Football' if curve_num == 0 else 'Dugout'
+                    
+                    # Only update if different from current
+                    current_date = st.session_state.get('chart_filter_date', None)
+                    current_sport = st.session_state.get('chart_filter_sport', None)
+                    if clicked_date != current_date or clicked_sport != current_sport:
+                        st.session_state['chart_filter_date'] = clicked_date
+                        st.session_state['chart_filter_sport'] = clicked_sport
+                        st.rerun()
             
             # Chart 3: DONE vs PENDING Overview (V3.3)
             st.markdown("---")
