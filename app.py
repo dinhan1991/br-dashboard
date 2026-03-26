@@ -1300,53 +1300,58 @@ if len(br_data) > 0:
     # Filters - Reorganized 2x2 layout (Factory removed - HWA only)
     st.markdown("#### 🔍 Bộ lọc")
     
-    # Check if chart click set a filter
-    chart_selected_date = st.session_state.get('chart_filter_date', None)
-    chart_selected_sport = st.session_state.get('chart_filter_sport', None)
+    # Check if chart click set a filter — directly set selectbox session state keys
+    chart_selected_date = st.session_state.pop('chart_filter_date', None)
+    chart_selected_sport = st.session_state.pop('chart_filter_sport', None)
+    
+    if chart_selected_date or chart_selected_sport:
+        # Set the actual selectbox keys so filter applies immediately
+        if chart_selected_date:
+            try:
+                from datetime import datetime as dt_parse
+                parsed = dt_parse.strptime(chart_selected_date, '%m/%d/%Y').date()
+                st.session_state['br_date'] = str(parsed)
+            except:
+                pass
+            # Store for banner display
+            st.session_state['chart_active_date'] = chart_selected_date
+        
+        if chart_selected_sport:
+            if chart_selected_sport == 'American Football':
+                st.session_state['br_sport'] = 'AMERICAN FOOTBALL'
+            # Dugout covers Baseball + Softball, so don't filter sport for it
+            st.session_state['chart_active_sport'] = chart_selected_sport
     
     # Show active chart filter banner + clear button
-    if chart_selected_date or chart_selected_sport:
+    active_date = st.session_state.get('chart_active_date', None)
+    active_sport = st.session_state.get('chart_active_sport', None)
+    if active_date or active_sport:
         filter_parts = []
-        if chart_selected_date:
-            filter_parts.append(f"📅 {chart_selected_date}")
-        if chart_selected_sport:
-            filter_parts.append(f"🏈 {chart_selected_sport}")
+        if active_date:
+            filter_parts.append(f"📅 {active_date}")
+        if active_sport:
+            filter_parts.append(f"🏈 {active_sport}")
         col_banner, col_clear = st.columns([4, 1])
         with col_banner:
             st.info(f"📊 Chart filter active: {' | '.join(filter_parts)}")
         with col_clear:
             if st.button("❌ Clear filter", key='clear_chart_filter'):
-                st.session_state.pop('chart_filter_date', None)
-                st.session_state.pop('chart_filter_sport', None)
+                st.session_state.pop('chart_active_date', None)
+                st.session_state.pop('chart_active_sport', None)
+                st.session_state['br_date'] = '-- Tất cả --'
+                st.session_state['br_sport'] = '-- Tất cả --'
                 st.rerun()
     
     # Row 1: Sports + Date
     col_f1, col_f2 = st.columns(2)
     with col_f1:
         sports_list = df_br['Sports Category'].unique().tolist()
-        # Map chart sport group back to category
-        sport_default = 0  # '-- Tất cả --'
-        if chart_selected_sport:
-            if chart_selected_sport == 'American Football' and 'AMERICAN FOOTBALL' in sports_list:
-                sport_default = sports_list.index('AMERICAN FOOTBALL') + 1  # +1 for '-- Tất cả --'
-            # Dugout = skip, show all (can't map to single category)
-        selected_sport = st.selectbox("🏈 Sports Category", ['-- Tất cả --'] + sports_list, index=sport_default, key='br_sport')
+        selected_sport = st.selectbox("🏈 Sports Category", ['-- Tất cả --'] + sports_list, key='br_sport')
     with col_f2:
         dates = df_br['Leading Buy Ready Date'].dropna().dt.date.unique()
         dates_sorted = sorted(dates) if len(dates) > 0 else []
         date_opts = ['-- Tất cả --'] + [str(d) for d in dates_sorted]
-        date_default = 0  # '-- Tất cả --'
-        if chart_selected_date:
-            # chart_selected_date is like '05/25/2026', need to match YYYY-MM-DD
-            try:
-                from datetime import datetime as dt_parse
-                parsed = dt_parse.strptime(chart_selected_date, '%m/%d/%Y').date()
-                date_str = str(parsed)
-                if date_str in date_opts:
-                    date_default = date_opts.index(date_str)
-            except:
-                pass
-        selected_date = st.selectbox("📅 Leading Buy Ready Date", date_opts, index=date_default, key='br_date')
+        selected_date = st.selectbox("📅 Leading Buy Ready Date", date_opts, key='br_date')
     
     # Row 2: Search + Status
     col_f3, col_f4 = st.columns(2)
