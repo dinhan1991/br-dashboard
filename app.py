@@ -1301,36 +1301,16 @@ if len(br_data) > 0:
     st.markdown("#### 🔍 Bộ lọc")
     
     # Check if chart click set a filter — directly set selectbox session state keys
-    chart_selected_date = st.session_state.pop('chart_filter_date', None)
-    chart_selected_sport = st.session_state.pop('chart_filter_sport', None)
-    
-    if chart_selected_date or chart_selected_sport:
-        # Set the actual selectbox keys so filter applies immediately
-        if chart_selected_date:
-            try:
-                from datetime import datetime as dt_parse
-                parsed = dt_parse.strptime(chart_selected_date, '%m/%d/%Y').date()
-                st.session_state['br_date'] = str(parsed)
-            except:
-                pass
-            # Store for banner display
-            st.session_state['chart_active_date'] = chart_selected_date
-        
-        if chart_selected_sport:
-            if chart_selected_sport == 'American Football':
-                st.session_state['br_sport'] = 'AMERICAN FOOTBALL'
-            # Dugout covers Baseball + Softball, so don't filter sport for it
-            st.session_state['chart_active_sport'] = chart_selected_sport
+    chart_selected_date = st.session_state.get('chart_active_date', None)
+    chart_selected_sport = st.session_state.get('chart_active_sport', None)
     
     # Show active chart filter banner + clear button
-    active_date = st.session_state.get('chart_active_date', None)
-    active_sport = st.session_state.get('chart_active_sport', None)
-    if active_date or active_sport:
+    if chart_selected_date or chart_selected_sport:
         filter_parts = []
-        if active_date:
-            filter_parts.append(f"📅 {active_date}")
-        if active_sport:
-            filter_parts.append(f"🏈 {active_sport}")
+        if chart_selected_date:
+            filter_parts.append(f"📅 {chart_selected_date}")
+        if chart_selected_sport:
+            filter_parts.append(f"🏈 {chart_selected_sport}")
         col_banner, col_clear = st.columns([4, 1])
         with col_banner:
             st.info(f"📊 Chart filter active: {' | '.join(filter_parts)}")
@@ -1557,20 +1537,33 @@ if len(br_data) > 0:
                 # Interactive chart - click to filter
                 event = st.plotly_chart(fig_grouped, use_container_width=True, on_select='rerun', key='chart_date_sport')
                 
-                # Handle chart click events
+                # Handle chart click events — on_select='rerun' already triggers rerun
+                # so we just set the filter values here, NO extra st.rerun() needed
                 if event and event.selection and event.selection.points:
                     point = event.selection.points[0]
-                    clicked_date = point.get('y', None)  # date_label from y-axis
-                    # Determine sport from curve number (0=Am.Football, 1=Dugout)
+                    clicked_date = point.get('y', None)  # date_label like '04/06/2026'
                     curve_num = point.get('curve_number', 0)
                     clicked_sport = 'American Football' if curve_num == 0 else 'Dugout'
                     
-                    # Only update if different from current
-                    current_date = st.session_state.get('chart_filter_date', None)
-                    current_sport = st.session_state.get('chart_filter_sport', None)
+                    # Only update if this is a new click (different from current filter)
+                    current_date = st.session_state.get('chart_active_date', None)
+                    current_sport = st.session_state.get('chart_active_sport', None)
                     if clicked_date != current_date or clicked_sport != current_sport:
-                        st.session_state['chart_filter_date'] = clicked_date
-                        st.session_state['chart_filter_sport'] = clicked_sport
+                        # Set banner display keys
+                        st.session_state['chart_active_date'] = clicked_date
+                        st.session_state['chart_active_sport'] = clicked_sport
+                        # Set selectbox values directly
+                        if clicked_date:
+                            try:
+                                from datetime import datetime as dt_parse
+                                parsed = dt_parse.strptime(clicked_date, '%m/%d/%Y').date()
+                                st.session_state['br_date'] = str(parsed)
+                            except:
+                                pass
+                        if clicked_sport == 'American Football':
+                            st.session_state['br_sport'] = 'AMERICAN FOOTBALL'
+                        else:
+                            st.session_state['br_sport'] = '-- Tất cả --'
                         st.rerun()
             
             # Chart 3: DONE vs PENDING Overview (V3.3)
