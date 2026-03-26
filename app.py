@@ -1300,11 +1300,27 @@ if len(br_data) > 0:
     # Filters - Reorganized 2x2 layout (Factory removed - HWA only)
     st.markdown("#### 🔍 Bộ lọc")
     
-    # Check if chart click set a filter — directly set selectbox session state keys
-    chart_selected_date = st.session_state.get('chart_active_date', None)
-    chart_selected_sport = st.session_state.get('chart_active_sport', None)
+    # Process pending chart click from PREVIOUS rerun (must happen BEFORE selectbox renders)
+    pending_date = st.session_state.pop('_pending_chart_date', None)
+    pending_sport = st.session_state.pop('_pending_chart_sport', None)
+    if pending_date is not None:
+        st.session_state['chart_active_date'] = pending_date
+        try:
+            from datetime import datetime as dt_parse
+            parsed = dt_parse.strptime(pending_date, '%m/%d/%Y').date()
+            st.session_state['br_date'] = str(parsed)
+        except:
+            pass
+    if pending_sport is not None:
+        st.session_state['chart_active_sport'] = pending_sport
+        if pending_sport == 'American Football':
+            st.session_state['br_sport'] = 'AMERICAN FOOTBALL'
+        else:
+            st.session_state['br_sport'] = '-- Tất cả --'
     
     # Show active chart filter banner + clear button
+    chart_selected_date = st.session_state.get('chart_active_date', None)
+    chart_selected_sport = st.session_state.get('chart_active_sport', None)
     if chart_selected_date or chart_selected_sport:
         filter_parts = []
         if chart_selected_date:
@@ -1537,33 +1553,19 @@ if len(br_data) > 0:
                 # Interactive chart - click to filter
                 event = st.plotly_chart(fig_grouped, use_container_width=True, on_select='rerun', key='chart_date_sport')
                 
-                # Handle chart click events — on_select='rerun' already triggers rerun
-                # so we just set the filter values here, NO extra st.rerun() needed
+                # Handle chart click events — store as PENDING for next rerun
+                # (can't set widget keys after widget has rendered)
                 if event and event.selection and event.selection.points:
                     point = event.selection.points[0]
-                    clicked_date = point.get('y', None)  # date_label like '04/06/2026'
+                    clicked_date = point.get('y', None)
                     curve_num = point.get('curve_number', 0)
                     clicked_sport = 'American Football' if curve_num == 0 else 'Dugout'
                     
-                    # Only update if this is a new click (different from current filter)
                     current_date = st.session_state.get('chart_active_date', None)
                     current_sport = st.session_state.get('chart_active_sport', None)
                     if clicked_date != current_date or clicked_sport != current_sport:
-                        # Set banner display keys
-                        st.session_state['chart_active_date'] = clicked_date
-                        st.session_state['chart_active_sport'] = clicked_sport
-                        # Set selectbox values directly
-                        if clicked_date:
-                            try:
-                                from datetime import datetime as dt_parse
-                                parsed = dt_parse.strptime(clicked_date, '%m/%d/%Y').date()
-                                st.session_state['br_date'] = str(parsed)
-                            except:
-                                pass
-                        if clicked_sport == 'American Football':
-                            st.session_state['br_sport'] = 'AMERICAN FOOTBALL'
-                        else:
-                            st.session_state['br_sport'] = '-- Tất cả --'
+                        st.session_state['_pending_chart_date'] = clicked_date
+                        st.session_state['_pending_chart_sport'] = clicked_sport
                         st.rerun()
             
             # Chart 3: DONE vs PENDING Overview (V3.3)
