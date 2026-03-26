@@ -1471,7 +1471,8 @@ if len(br_data) > 0:
                 st.markdown("##### 📅 Articles by Date & Sport")
                 
                 # Create Dugout category (Baseball + Softball)
-                df_timeline = df_br_filtered.copy()
+                # Use FULL data (df_br) so chart always shows all dates for clicking
+                df_timeline = df_br.copy()
                 df_timeline['Sport Group'] = df_timeline['Sports Category'].apply(
                     lambda x: 'American Football' if x == 'AMERICAN FOOTBALL' else 'Dugout'
                 )
