@@ -1488,34 +1488,32 @@ if len(br_data) > 0:
                 
                 fig_grouped = go.Figure()
                 
-                # American Football bars
+                # American Football bars (vertical)
                 af_data = timeline_grouped[timeline_grouped['sport'] == 'American Football']
                 if len(af_data) > 0:
                     fig_grouped.add_trace(go.Bar(
-                        y=af_data['date_label'],
-                        x=af_data['count'],
+                        x=af_data['date_label'],
+                        y=af_data['count'],
                         name='🏈 Am. Football',
-                        orientation='h',
                         marker=dict(color='#f5576c', line=dict(color='#1a1a2e', width=1)),
                         text=af_data['count'],
                         textposition='auto',
                         textfont=dict(size=12, color='white'),
-                        hovertemplate='<b>Am. Football</b><br>%{y}<br>Count: %{x}<extra></extra>'
+                        hovertemplate='<b>Am. Football</b><br>%{x}<br>Count: %{y}<extra></extra>'
                     ))
                 
-                # Dugout bars
+                # Dugout bars (vertical)
                 dugout_data = timeline_grouped[timeline_grouped['sport'] == 'Dugout']
                 if len(dugout_data) > 0:
                     fig_grouped.add_trace(go.Bar(
-                        y=dugout_data['date_label'],
-                        x=dugout_data['count'],
+                        x=dugout_data['date_label'],
+                        y=dugout_data['count'],
                         name='⚾ Dugout',
-                        orientation='h',
                         marker=dict(color='#38ef7d', line=dict(color='#1a1a2e', width=1)),
                         text=dugout_data['count'],
                         textposition='auto',
                         textfont=dict(size=12, color='white'),
-                        hovertemplate='<b>Dugout</b><br>%{y}<br>Count: %{x}<extra></extra>'
+                        hovertemplate='<b>Dugout</b><br>%{x}<br>Count: %{y}<extra></extra>'
                     ))
                 
                 # Get all unique date labels sorted by actual date
@@ -1525,22 +1523,23 @@ if len(br_data) > 0:
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(color='#e2e8f0'),
-                    barmode='group',  # Group bars side by side
+                    barmode='group',
                     xaxis=dict(
+                        showgrid=False,
+                        title='Buy Ready Date',
+                        categoryorder='array',
+                        categoryarray=all_dates,
+                        tickangle=-45
+                    ),
+                    yaxis=dict(
                         showgrid=True,
                         gridcolor='rgba(160, 174, 192, 0.1)',
                         title='Article Count',
                         tickmode='linear',
                         dtick=1
                     ),
-                    yaxis=dict(
-                        showgrid=False,
-                        title='Buy Ready Date',
-                        categoryorder='array',
-                        categoryarray=all_dates
-                    ),
                     height=400,
-                    margin=dict(t=30, b=40, l=100, r=20),
+                    margin=dict(t=30, b=80, l=40, r=20),
                     legend=dict(
                         orientation='h',
                         yanchor='bottom',
@@ -1557,7 +1556,7 @@ if len(br_data) > 0:
                 # (can't set widget keys after widget has rendered)
                 if event and event.selection and event.selection.points:
                     point = event.selection.points[0]
-                    clicked_date = point.get('y', None)
+                    clicked_date = point.get('x', None)
                     curve_num = point.get('curve_number', 0)
                     clicked_sport = 'American Football' if curve_num == 0 else 'Dugout'
                     
@@ -1568,15 +1567,20 @@ if len(br_data) > 0:
                         st.session_state['_pending_chart_sport'] = clicked_sport
                         st.rerun()
             
-            # Chart 3: DONE vs PENDING Overview (V3.3)
+            # Chart 3: DONE vs PENDING Overview (V3.3) — Interactive
             st.markdown("---")
             st.markdown("##### 📊 Signing Progress Overview")
+            
+            # Initialize progress filter state
+            if 'progress_filter' not in st.session_state:
+                st.session_state.progress_filter = None
             
             try:
                 archived_br_data = load_archived_br()
                 done_count = len(archived_br_data)
             except:
                 done_count = 0
+                archived_br_data = pd.DataFrame()
             
             pending_count = len(df_br_filtered)
             total_count = done_count + pending_count
@@ -1636,91 +1640,108 @@ if len(br_data) > 0:
                 st.plotly_chart(fig_progress, use_container_width=True)
             
             with col_progress2:
-                # Stats cards
+                # Interactive Stats buttons
                 if total_count > 0:
                     done_pct = (done_count / total_count) * 100
                 else:
                     done_pct = 0
                 
-                st.markdown(f"""
-                    <div style="display: flex; gap: 1rem; height: 100%;">
-                        <div style="
-                            flex: 1;
-                            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-                            padding: 1rem;
-                            border-radius: 12px;
-                            text-align: center;
-                        ">
-                            <div style="color: #d1fae5; font-size: 0.85rem;">✅ DONE</div>
-                            <div style="color: white; font-size: 2rem; font-weight: 700;">{done_count}</div>
-                            <div style="color: #d1fae5; font-size: 0.85rem;">{done_pct:.1f}%</div>
-                        </div>
-                        <div style="
-                            flex: 1;
-                            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-                            padding: 1rem;
-                            border-radius: 12px;
-                            text-align: center;
-                        ">
-                            <div style="color: #fef3c7; font-size: 0.85rem;">🔴 PENDING</div>
-                            <div style="color: white; font-size: 2rem; font-weight: 700;">{pending_count}</div>
-                            <div style="color: #fef3c7; font-size: 0.85rem;">{100-done_pct:.1f}%</div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    done_active = st.session_state.progress_filter == 'done'
+                    done_label = f"✅ DONE — {done_count} ({done_pct:.0f}%)"
+                    if st.button(done_label, key='btn_done', use_container_width=True, type='primary' if done_active else 'secondary'):
+                        if done_active:
+                            st.session_state.progress_filter = None
+                        else:
+                            st.session_state.progress_filter = 'done'
+                        st.rerun()
+                with btn_col2:
+                    pending_active = st.session_state.progress_filter == 'pending'
+                    pending_label = f"🔴 PENDING — {pending_count} ({100-done_pct:.0f}%)"
+                    if st.button(pending_label, key='btn_pending', use_container_width=True, type='primary' if pending_active else 'secondary'):
+                        if pending_active:
+                            st.session_state.progress_filter = None
+                        else:
+                            st.session_state.progress_filter = 'pending'
+                        st.rerun()
+                
+                if st.session_state.progress_filter:
+                    filter_name = 'DONE (Archived)' if st.session_state.progress_filter == 'done' else 'PENDING (Current)'
+                    st.info(f"🔍 Showing: **{filter_name}** articles")
         else:
             st.info("📊 No data available for analytics. Upload a file or adjust filters.")
     
     st.markdown("---")
     
-    # Sports Stats
+    # Sports Stats — Interactive filter buttons
     st.markdown("#### 🏆 Thống kê theo Sports")
+    
+    # Initialize sport filter state
+    if 'sport_card_filter' not in st.session_state:
+        st.session_state.sport_card_filter = None
+    
     col1, col2, col3, col4 = st.columns(4)
     sports_counts = df_br_filtered['Sports Category'].value_counts()
     
     with col1:
-        st.markdown(f'<div class="stat-card"><div class="stat-number">{len(df_br_filtered)}</div><div class="stat-label">Tổng cộng</div></div>', unsafe_allow_html=True)
+        all_active = st.session_state.sport_card_filter is None
+        if st.button(f"📊 Tổng: {len(df_br_filtered)}", key='btn_sport_all', use_container_width=True, type='primary' if all_active else 'secondary'):
+            st.session_state.sport_card_filter = None
+            st.rerun()
     with col2:
-        st.markdown(f'<div class="stat-card"><div class="stat-number" style="background: linear-gradient(90deg, #f093fb 0%, #f5576c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{sports_counts.get("AMERICAN FOOTBALL", 0)}</div><div class="stat-label">🏈 Am. Football</div></div>', unsafe_allow_html=True)
+        af_active = st.session_state.sport_card_filter == 'AMERICAN FOOTBALL'
+        af_count = sports_counts.get('AMERICAN FOOTBALL', 0)
+        if st.button(f"🏈 Am.Football: {af_count}", key='btn_sport_af', use_container_width=True, type='primary' if af_active else 'secondary'):
+            if af_active:
+                st.session_state.sport_card_filter = None
+            else:
+                st.session_state.sport_card_filter = 'AMERICAN FOOTBALL'
+            st.rerun()
     with col3:
-        st.markdown(f'<div class="stat-card"><div class="stat-number" style="background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{sports_counts.get("BASEBALL", 0)}</div><div class="stat-label">⚾ Baseball</div></div>', unsafe_allow_html=True)
+        bb_active = st.session_state.sport_card_filter == 'BASEBALL'
+        bb_count = sports_counts.get('BASEBALL', 0)
+        if st.button(f"⚾ Baseball: {bb_count}", key='btn_sport_bb', use_container_width=True, type='primary' if bb_active else 'secondary'):
+            if bb_active:
+                st.session_state.sport_card_filter = None
+            else:
+                st.session_state.sport_card_filter = 'BASEBALL'
+            st.rerun()
     with col4:
-        st.markdown(f'<div class="stat-card"><div class="stat-number" style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{sports_counts.get("SOFTBALL", 0)}</div><div class="stat-label">🥎 Softball</div></div>', unsafe_allow_html=True)
-    
-    # Factory Stats with Logos
-    factory_counts = df_br_filtered['Factory'].value_counts()
-    if len(factory_counts) > 0:
-        st.markdown("#### 🏭 Thống kê theo Factory")
-        
-        # Load HWA logo
-        logo_hwa_path = os.path.join(os.path.dirname(__file__), 'logo_hwa.png')
-        logo_hwa_b64 = ""
-        
-        if os.path.exists(logo_hwa_path):
-            with open(logo_hwa_path, "rb") as f:
-                logo_hwa_b64 = base64.b64encode(f.read()).decode()
-        
-        factory_cols = st.columns(len(factory_counts))
-        for i, (factory, count) in enumerate(factory_counts.items()):
-            if factory and str(factory) != 'nan':
-                with factory_cols[i]:
-                    if factory == "HWA" and logo_hwa_b64:
-                        logo_img = f'<img src="data:image/png;base64,{logo_hwa_b64}" style="height: 50px; margin-bottom: 10px; background: white; padding: 5px; border-radius: 8px;">'
-                        color = "#4facfe"
-                    else:
-                        logo_img = '<div style="font-size: 2rem; margin-bottom: 10px;">🏭</div>'
-                        color = "#667eea"
-                    
-                    st.markdown(f'''
-<div class="stat-card" style="border-top: 3px solid {color};">
-    {logo_img}
-    <div style="font-size: 2.5rem; font-weight: 700; color: {color};">{count}</div>
-    <div class="stat-label">{factory}</div>
-</div>''', unsafe_allow_html=True)
+        sb_active = st.session_state.sport_card_filter == 'SOFTBALL'
+        sb_count = sports_counts.get('SOFTBALL', 0)
+        if st.button(f"🥎 Softball: {sb_count}", key='btn_sport_sb', use_container_width=True, type='primary' if sb_active else 'secondary'):
+            if sb_active:
+                st.session_state.sport_card_filter = None
+            else:
+                st.session_state.sport_card_filter = 'SOFTBALL'
+            st.rerun()
     
     
     # ==================== TABLE SECTION ====================
     st.markdown("#### 📋 Bảng dữ liệu")
+    
+    # Apply interactive filters (progress & sport card buttons)
+    if st.session_state.get('progress_filter') == 'done':
+        # Show archived (DONE) articles instead of current
+        try:
+            df_br_filtered = archived_br_data.copy() if len(archived_br_data) > 0 else pd.DataFrame()
+        except:
+            df_br_filtered = pd.DataFrame()
+        if len(df_br_filtered) > 0 and 'STT' not in df_br_filtered.columns:
+            df_br_filtered.insert(0, 'STT', range(1, len(df_br_filtered) + 1))
+    # progress_filter == 'pending' keeps df_br_filtered as-is (current data)
+    
+    # Apply sport card filter
+    if st.session_state.get('sport_card_filter') and len(df_br_filtered) > 0:
+        sport_filter = st.session_state.sport_card_filter
+        df_br_filtered = df_br_filtered[
+            df_br_filtered['Sports Category'].str.upper() == sport_filter
+        ]
+        df_br_filtered = df_br_filtered.reset_index(drop=True)
+        if 'STT' in df_br_filtered.columns:
+            df_br_filtered['STT'] = range(1, len(df_br_filtered) + 1)
+        st.info(f"🔍 Đang lọc: **{sport_filter}** ({len(df_br_filtered)} articles)")
     
     # Apply timeline filter from sidebar
     if 'timeline_filter' in st.session_state and st.session_state.timeline_filter:
