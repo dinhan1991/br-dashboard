@@ -1387,6 +1387,12 @@ if len(br_data) > 0:
     df_br_filtered = df_br.copy()
     if selected_sport != '-- Tất cả --':
         df_br_filtered = df_br_filtered[df_br_filtered['Sports Category'] == selected_sport]
+    
+    # Apply Dugout chart filter (Baseball + Softball) when sport selectbox is '-- Tất cả --'
+    chart_sport = st.session_state.get('chart_active_sport', None)
+    if chart_sport == 'Dugout' and selected_sport == '-- Tất cả --':
+        df_br_filtered = df_br_filtered[df_br_filtered['Sports Category'].isin(['BASEBALL', 'SOFTBALL'])]
+    
     if selected_date != '-- Tất cả --':
         target_date = datetime.strptime(selected_date, '%Y-%m-%d').date()
         df_br_filtered = df_br_filtered[df_br_filtered['Leading Buy Ready Date'].dt.date == target_date]
