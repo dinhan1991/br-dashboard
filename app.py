@@ -1303,6 +1303,7 @@ if len(br_data) > 0:
     # Process pending chart click from PREVIOUS rerun (must happen BEFORE selectbox renders)
     pending_date = st.session_state.pop('_pending_chart_date', None)
     pending_sport = st.session_state.pop('_pending_chart_sport', None)
+    pending_status = st.session_state.pop('_pending_chart_status', None)
     if pending_date is not None:
         st.session_state['chart_active_date'] = pending_date
         try:
@@ -1317,16 +1318,22 @@ if len(br_data) > 0:
             st.session_state['br_sport'] = 'AMERICAN FOOTBALL'
         else:
             st.session_state['br_sport'] = '-- Tất cả --'
+    if pending_status is not None:
+        st.session_state['chart_active_status'] = pending_status
+        st.session_state['br_status'] = pending_status
     
     # Show active chart filter banner + clear button
     chart_selected_date = st.session_state.get('chart_active_date', None)
     chart_selected_sport = st.session_state.get('chart_active_sport', None)
-    if chart_selected_date or chart_selected_sport:
+    chart_selected_status = st.session_state.get('chart_active_status', None)
+    if chart_selected_date or chart_selected_sport or chart_selected_status:
         filter_parts = []
         if chart_selected_date:
             filter_parts.append(f"📅 {chart_selected_date}")
         if chart_selected_sport:
             filter_parts.append(f"🏈 {chart_selected_sport}")
+        if chart_selected_status:
+            filter_parts.append(f"📊 {chart_selected_status}")
         col_banner, col_clear = st.columns([4, 1])
         with col_banner:
             st.info(f"📊 Chart filter active: {' | '.join(filter_parts)}")
@@ -1334,8 +1341,10 @@ if len(br_data) > 0:
             if st.button("❌ Clear filter", key='clear_chart_filter'):
                 st.session_state.pop('chart_active_date', None)
                 st.session_state.pop('chart_active_sport', None)
+                st.session_state.pop('chart_active_status', None)
                 st.session_state['br_date'] = '-- Tất cả --'
                 st.session_state['br_sport'] = '-- Tất cả --'
+                st.session_state['br_status'] = '-- Tất cả --'
                 st.rerun()
     
     # Row 1: Sports + Date
@@ -1466,7 +1475,27 @@ if len(br_data) > 0:
                     margin=dict(t=30, b=20, l=20, r=20)
                 )
                 
-                st.plotly_chart(fig_status, use_container_width=True)
+                # Interactive pie chart - click to filter by status
+                # Reverse map: clean label -> emoji status for selectbox
+                reverse_label_map = {
+                    'PASSED': '✅ PASSED',
+                    'Processing': '🔄 Processing',
+                    'PENDING': '🔴 PENDING',
+                    'NOT YET UPDATED': '⏳ NOT YET UPDATED'
+                }
+                
+                pie_event = st.plotly_chart(fig_status, use_container_width=True, on_select='rerun', key='chart_status_pie')
+                
+                # Handle pie click events
+                if pie_event and pie_event.selection and pie_event.selection.points:
+                    pie_point = pie_event.selection.points[0]
+                    clicked_label = pie_point.get('label', None)
+                    if clicked_label:
+                        clicked_status = reverse_label_map.get(clicked_label, None)
+                        current_status = st.session_state.get('chart_active_status', None)
+                        if clicked_status and clicked_status != current_status:
+                            st.session_state['_pending_chart_status'] = clicked_status
+                            st.rerun()
             
             # Chart 2: Article Count by Date & Sport (Grouped Bar)
             with col_chart2:
