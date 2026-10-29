@@ -413,27 +413,91 @@ def save_drop_to_db(df_new):
     return inserted, updated, unchanged, archived, skipped, new_articles, changed_articles, archived_list
 
 def update_all_statuses(df):
-    """Update all status columns from dataframe"""
+    """Update all status columns from dataframe. Returns (matched, updated, not_found, unchanged, changes_detail)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     
+    matched = 0
+    updated = 0
+    not_found = 0
+    unchanged = 0
+    not_found_list = []
+    changes_detail = {}  # {article_number: [list of changes]}
+    
     for _, row in df.iterrows():
         article_number = str(row.get('Article NUMBER', '')).strip()
-        if article_number and article_number != 'nan':
-            cursor.execute('''
-                UPDATE articles SET mcs_status = %s, fgt_status = %s, ft_status = %s, wt_status = %s, updated_at = %s
-                WHERE article_number = %s
-            ''', (
-                str(row.get('MCS status', '')),
-                str(row.get('FGT status', '')),
-                str(row.get('FT status', '')),
-                str(row.get('WT status', '')),
-                now, article_number
-            ))
+        if not article_number or article_number == 'nan':
+            continue
+        
+        new_mcs = str(row.get('MCS status', '')).strip()
+        new_fgt = str(row.get('FGT status', '')).strip()
+        new_ft = str(row.get('FT status', '')).strip()
+        new_wt = str(row.get('WT status', '')).strip()
+        
+        # Skip if all statuses are empty/nan
+        if all(v in ('', 'nan', 'None', 'none') for v in [new_mcs, new_fgt, new_ft, new_wt]):
+            continue
+        
+        # Clean nan values to empty string
+        new_mcs = '' if new_mcs in ('nan', 'None', 'none') else new_mcs
+        new_fgt = '' if new_fgt in ('nan', 'None', 'none') else new_fgt
+        new_ft = '' if new_ft in ('nan', 'None', 'none') else new_ft
+        new_wt = '' if new_wt in ('nan', 'None', 'none') else new_wt
+        
+        # Check if article exists and get current values
+        cursor.execute('SELECT mcs_status, fgt_status, ft_status, wt_status FROM articles WHERE article_number = %s', (article_number,))
+        existing = cursor.fetchone()
+        
+        if existing is None:
+            not_found += 1
+            not_found_list.append(article_number)
+            continue
+        
+        matched += 1
+        old_mcs, old_fgt, old_ft, old_wt = existing
+        
+        # Check what changed
+        article_changes = []
+        if new_mcs and new_mcs != (old_mcs or ''):
+            article_changes.append(f"MCS: {old_mcs or '—'} → {new_mcs}")
+        if new_fgt and new_fgt != (old_fgt or ''):
+            article_changes.append(f"FGT: {old_fgt or '—'} → {new_fgt}")
+        if new_ft and new_ft != (old_ft or ''):
+            article_changes.append(f"FT: {old_ft or '—'} → {new_ft}")
+        if new_wt and new_wt != (old_wt or ''):
+            article_changes.append(f"WT: {old_wt or '—'} → {new_wt}")
+        
+        if article_changes:
+            # Only update fields that have new values (non-empty)
+            update_fields = []
+            update_values = []
+            if new_mcs:
+                update_fields.append('mcs_status = %s')
+                update_values.append(new_mcs)
+            if new_fgt:
+                update_fields.append('fgt_status = %s')
+                update_values.append(new_fgt)
+            if new_ft:
+                update_fields.append('ft_status = %s')
+                update_values.append(new_ft)
+            if new_wt:
+                update_fields.append('wt_status = %s')
+                update_values.append(new_wt)
+            
+            if update_fields:
+                update_fields.append('updated_at = %s')
+                update_values.append(now)
+                update_values.append(article_number)
+                cursor.execute(f"UPDATE articles SET {', '.join(update_fields)} WHERE article_number = %s", update_values)
+                updated += 1
+                changes_detail[article_number] = article_changes
+        else:
+            unchanged += 1
     
     conn.commit()
     conn.close()
+    return matched, updated, not_found, unchanged, not_found_list, changes_detail
 
 # Initialize database
 init_db()
@@ -453,7 +517,7 @@ def find_column(df, possible_names):
     return None
 
 def detect_file_type(file):
-    """Detect if file is Buy Ready or Drop Report based on filename"""
+    """Detect if file is Buy Ready, Drop Report, or Inline Status based on filename/sheets"""
     filename = file.name.lower()
     
     if 'buy ready' in filename or 'buyready' in filename or 'buy_ready' in filename:
@@ -461,6 +525,15 @@ def detect_file_type(file):
     elif 'drop' in filename:
         return 'drop_report'
     else:
+        # Check sheet names for inline status file
+        try:
+            xl = pd.ExcelFile(file)
+            sheet_names_lower = [s.lower().strip() for s in xl.sheet_names]
+            if 'af-inline' in sheet_names_lower or 'dg-inline' in sheet_names_lower:
+                file.seek(0)  # Reset file pointer after reading
+                return 'inline_status'
+        except:
+            pass
         return 'unknown'
 
 # Custom CSS - Enhanced UI
@@ -1238,6 +1311,103 @@ if uploaded_file is not None:
             import traceback
             traceback.print_exc()
 
+    elif file_type == 'inline_status':
+        st.info("📋 Detected: **Inline Status Update** (AF-INLINE / DG-INLINE)")
+        
+        try:
+            xl = pd.ExcelFile(uploaded_file)
+            sheet_names = xl.sheet_names
+            # Find actual sheet names (case-insensitive match)
+            af_sheet = None
+            dg_sheet = None
+            for s in sheet_names:
+                if s.lower().strip() == 'af-inline':
+                    af_sheet = s
+                elif s.lower().strip() == 'dg-inline':
+                    dg_sheet = s
+            
+            all_status_data = []
+            sheets_found = []
+            
+            for sheet_name, sport_label in [(af_sheet, 'American Football'), (dg_sheet, 'Dugout')]:
+                if sheet_name is None:
+                    continue
+                
+                df_sheet = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+                print(f"[DEBUG] Inline sheet '{sheet_name}': {len(df_sheet)} rows, columns: {list(df_sheet.columns)}")
+                
+                # Find columns
+                col_article = find_column(df_sheet, ['Article NUMBER', 'Article Number', 'Article', 'Art. No.', 'Art No', 'Article No'])
+                col_mcs = find_column(df_sheet, ['MCS status', 'MCS', 'MCS Status'])
+                col_fgt = find_column(df_sheet, ['FGT status', 'FGT', 'FGT Status'])
+                col_ft = find_column(df_sheet, ['FT status', 'FT', 'FT Status'])
+                col_wt = find_column(df_sheet, ['WT status', 'WT', 'WT Status'])
+                
+                print(f"[DEBUG] Inline '{sheet_name}' column mapping: article={col_article}, mcs={col_mcs}, fgt={col_fgt}, ft={col_ft}, wt={col_wt}")
+                
+                if col_article is None:
+                    st.warning(f"⚠️ Sheet **{sheet_name}**: Không tìm thấy cột Article NUMBER. Columns: {', '.join(df_sheet.columns.tolist())}")
+                    continue
+                
+                # Build status data
+                sheet_data = pd.DataFrame({
+                    'Article NUMBER': df_sheet[col_article].astype(str).str.strip(),
+                    'MCS status': df_sheet[col_mcs].astype(str).str.strip() if col_mcs else '',
+                    'FGT status': df_sheet[col_fgt].astype(str).str.strip() if col_fgt else '',
+                    'FT status': df_sheet[col_ft].astype(str).str.strip() if col_ft else '',
+                    'WT status': df_sheet[col_wt].astype(str).str.strip() if col_wt else '',
+                })
+                
+                # Filter out rows with no article number
+                sheet_data = sheet_data[sheet_data['Article NUMBER'].notna() & (sheet_data['Article NUMBER'] != '') & (sheet_data['Article NUMBER'] != 'nan')]
+                
+                if len(sheet_data) > 0:
+                    all_status_data.append(sheet_data)
+                    sheets_found.append(f"{sheet_name} ({len(sheet_data)} articles)")
+                    print(f"[DEBUG] Inline '{sheet_name}': {len(sheet_data)} valid articles")
+                else:
+                    st.warning(f"⚠️ Sheet **{sheet_name}**: Không có article hợp lệ")
+            
+            if all_status_data:
+                combined = pd.concat(all_status_data, ignore_index=True)
+                st.info(f"📊 Processing: {', '.join(sheets_found)} — Total: **{len(combined)}** articles")
+                
+                matched, updated, not_found, unchanged, not_found_list, changes_detail = update_all_statuses(combined)
+                print(f"[DEBUG] Inline status result: matched={matched}, updated={updated}, not_found={not_found}, unchanged={unchanged}")
+                
+                # Build result message
+                if updated == 0 and not_found == 0:
+                    result_msg = f"ℹ️ **Không có thay đổi.** {unchanged} articles giữ nguyên status."
+                    st.session_state['last_process_result'] = result_msg
+                    st.session_state['last_process_result_type'] = 'info'
+                else:
+                    result_msg = f"✅ **Inline Status Update** — **{updated}** updated | **{unchanged}** unchanged | **{not_found}** not found in DB"
+                    
+                    if changes_detail:
+                        result_msg += f"\n\n📝 **Chi tiết thay đổi:**"
+                        for art, changes in list(changes_detail.items())[:20]:
+                            result_msg += f"\n- `{art}`: {' | '.join(changes)}"
+                        if len(changes_detail) > 20:
+                            result_msg += f"\n- ...và {len(changes_detail) - 20} articles khác"
+                    
+                    if not_found_list:
+                        result_msg += f"\n\n⚠️ **Không tìm thấy trong DB:** {', '.join(not_found_list[:10])}"
+                        if len(not_found_list) > 10:
+                            result_msg += f" ...và {len(not_found_list) - 10} articles khác"
+                    
+                    st.session_state['last_process_result'] = result_msg
+                    st.session_state['last_process_result_type'] = 'success'
+                
+                st.session_state['last_processed_file'] = file_key
+                st.rerun()
+            else:
+                st.warning("⚠️ Không tìm thấy data hợp lệ trong các sheet AF-INLINE / DG-INLINE")
+        except Exception as e:
+            st.error(f"❌ Lỗi xử lý Inline Status: {str(e)}")
+            print(f"[DEBUG] Inline Status ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+
     # 'unknown' file_type is handled above in the guard block
 
 # ==================== BR SECTION ====================
@@ -1817,8 +1987,11 @@ if len(br_data) > 0:
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
             if st.button("💾 Lưu Status", type="primary", key="save_br"):
-                update_all_statuses(edited_df)
-                st.success("✅ Đã lưu! (Giữ nguyên vị trí)")
+                matched, upd, nf, unch, nf_list, changes = update_all_statuses(edited_df)
+                if upd > 0:
+                    st.success(f"✅ Đã lưu! {upd} articles updated, {unch} unchanged")
+                else:
+                    st.success("✅ Đã lưu! (Không có thay đổi)")
                 # No st.rerun() to preserve scroll position
         
         with col_btn2:
