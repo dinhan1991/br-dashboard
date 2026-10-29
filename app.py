@@ -434,16 +434,10 @@ def update_all_statuses(df, overwrite_empty=False):
         if not article_number or article_number.lower() in ('nan', 'none', '<na>'):
             continue
         
-        new_mcs = str(row.get('MCS status', '')).strip()
-        new_fgt = str(row.get('FGT status', '')).strip()
-        new_ft = str(row.get('FT status', '')).strip()
-        new_wt = str(row.get('WT status', '')).strip()
-        
-        # Clean nan values to empty string
-        new_mcs = '' if new_mcs.lower() in ('nan', 'none', '<na>', 'nat', '') else new_mcs
-        new_fgt = '' if new_fgt.lower() in ('nan', 'none', '<na>', 'nat', '') else new_fgt
-        new_ft = '' if new_ft.lower() in ('nan', 'none', '<na>', 'nat', '') else new_ft
-        new_wt = '' if new_wt.lower() in ('nan', 'none', '<na>', 'nat', '') else new_wt
+        new_mcs = clean_status_val(row.get('MCS status', ''))
+        new_fgt = clean_status_val(row.get('FGT status', ''))
+        new_ft = clean_status_val(row.get('FT status', ''))
+        new_wt = clean_status_val(row.get('WT status', ''))
         
         # Skip if all statuses are empty AND not in overwrite mode
         if not overwrite_empty and all(v == '' for v in [new_mcs, new_fgt, new_ft, new_wt]):
@@ -554,6 +548,15 @@ def clean_article_str(val):
         return ''
     return s.upper()
 
+def clean_status_val(val):
+    """Clean a status cell value, keeping 'N/A', 'NA', or any text intact, only clearing true nan/empty."""
+    if pd.isna(val):
+        return ''
+    s = str(val).strip()
+    if s.lower() in ('nan', 'none', '<na>', 'nat'):
+        return ''
+    return s
+
 def find_column(df, possible_names):
     df_columns_lower = {str(col).lower().strip(): col for col in df.columns}
     # 1. Exact match
@@ -570,9 +573,11 @@ def find_column(df, possible_names):
     return None
 
 def parse_inline_sheet(xl, sheet_name):
-    """Parse an inline status sheet, auto-detecting the header row even if there are count/title rows above it."""
+    """Parse an inline status sheet, auto-detecting the header row even if there are count/title rows above it.
+    Uses keep_default_na=False so 'N/A' or 'NA' strings are NOT converted to float NaN.
+    """
     try:
-        df_raw = xl.parse(sheet_name, header=None)
+        df_raw = xl.parse(sheet_name, header=None, keep_default_na=False)
     except Exception as e:
         print(f"[DEBUG] Error parsing sheet {sheet_name}: {e}")
         return pd.DataFrame()
@@ -583,7 +588,7 @@ def parse_inline_sheet(xl, sheet_name):
     # Locate header row: check first 15 rows for 'article' or status columns
     header_idx = None
     for idx in range(min(15, len(df_raw))):
-        row_strs = [str(val).lower().strip() for val in df_raw.iloc[idx].dropna()]
+        row_strs = [str(val).lower().strip() for val in df_raw.iloc[idx].dropna() if str(val).strip()]
         has_article = any('article' in s or s in ('art. no.', 'art no', 'art.') for s in row_strs)
         has_statuses = any('mcs' in s for s in row_strs) and any('fgt' in s for s in row_strs)
         if has_article or has_statuses:
@@ -593,7 +598,7 @@ def parse_inline_sheet(xl, sheet_name):
     if header_idx is None:
         header_idx = 0
         
-    headers = [str(col).strip() if pd.notna(col) else f"Unnamed_{i}" for i, col in enumerate(df_raw.iloc[header_idx])]
+    headers = [str(col).strip() if pd.notna(col) and str(col).strip() else f"Unnamed_{i}" for i, col in enumerate(df_raw.iloc[header_idx])]
     df_data = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
     df_data.columns = headers
     return df_data
@@ -1437,24 +1442,24 @@ if uploaded_file is not None:
                 # Resolve FT and WT series:
                 # If separate FT/WT column exists, use it. Otherwise, fallback to combined FT/WT column if available.
                 if col_ft:
-                    ft_series = df_sheet[col_ft].astype(str).str.strip()
+                    ft_series = df_sheet[col_ft].apply(clean_status_val)
                 elif col_ft_wt:
-                    ft_series = df_sheet[col_ft_wt].astype(str).str.strip()
+                    ft_series = df_sheet[col_ft_wt].apply(clean_status_val)
                 else:
                     ft_series = ''
                     
                 if col_wt:
-                    wt_series = df_sheet[col_wt].astype(str).str.strip()
+                    wt_series = df_sheet[col_wt].apply(clean_status_val)
                 elif col_ft_wt:
-                    wt_series = df_sheet[col_ft_wt].astype(str).str.strip()
+                    wt_series = df_sheet[col_ft_wt].apply(clean_status_val)
                 else:
                     wt_series = ''
                 
                 # Build status data
                 sheet_data = pd.DataFrame({
                     'Article NUMBER': df_sheet[col_article].apply(clean_article_str),
-                    'MCS status': df_sheet[col_mcs].astype(str).str.strip() if col_mcs else '',
-                    'FGT status': df_sheet[col_fgt].astype(str).str.strip() if col_fgt else '',
+                    'MCS status': df_sheet[col_mcs].apply(clean_status_val) if col_mcs else '',
+                    'FGT status': df_sheet[col_fgt].apply(clean_status_val) if col_fgt else '',
                     'FT status': ft_series,
                     'WT status': wt_series,
                 })
