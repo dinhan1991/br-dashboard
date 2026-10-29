@@ -412,8 +412,12 @@ def save_drop_to_db(df_new):
     conn.close()
     return inserted, updated, unchanged, archived, skipped, new_articles, changed_articles, archived_list
 
-def update_all_statuses(df):
-    """Update all status columns from dataframe. Returns (matched, updated, not_found, unchanged, changes_detail)"""
+def update_all_statuses(df, overwrite_empty=False):
+    """Update all status columns from dataframe.
+    overwrite_empty=True: empty cells in Excel CLEAR existing values (for inline status files)
+    overwrite_empty=False: only update non-empty cells (for data editor save)
+    Returns (matched, updated, not_found, unchanged, not_found_list, changes_detail)
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
@@ -435,15 +439,15 @@ def update_all_statuses(df):
         new_ft = str(row.get('FT status', '')).strip()
         new_wt = str(row.get('WT status', '')).strip()
         
-        # Skip if all statuses are empty/nan
-        if all(v in ('', 'nan', 'None', 'none') for v in [new_mcs, new_fgt, new_ft, new_wt]):
-            continue
-        
         # Clean nan values to empty string
         new_mcs = '' if new_mcs in ('nan', 'None', 'none') else new_mcs
         new_fgt = '' if new_fgt in ('nan', 'None', 'none') else new_fgt
         new_ft = '' if new_ft in ('nan', 'None', 'none') else new_ft
         new_wt = '' if new_wt in ('nan', 'None', 'none') else new_wt
+        
+        # Skip if all statuses are empty AND not in overwrite mode
+        if not overwrite_empty and all(v == '' for v in [new_mcs, new_fgt, new_ft, new_wt]):
+            continue
         
         # Check if article exists and get current values
         cursor.execute('SELECT mcs_status, fgt_status, ft_status, wt_status FROM articles WHERE article_number = %s', (article_number,))
@@ -459,39 +463,70 @@ def update_all_statuses(df):
         
         # Check what changed
         article_changes = []
-        if new_mcs and new_mcs != (old_mcs or ''):
-            article_changes.append(f"MCS: {old_mcs or '—'} → {new_mcs}")
-        if new_fgt and new_fgt != (old_fgt or ''):
-            article_changes.append(f"FGT: {old_fgt or '—'} → {new_fgt}")
-        if new_ft and new_ft != (old_ft or ''):
-            article_changes.append(f"FT: {old_ft or '—'} → {new_ft}")
-        if new_wt and new_wt != (old_wt or ''):
-            article_changes.append(f"WT: {old_wt or '—'} → {new_wt}")
+        if overwrite_empty:
+            # Overwrite mode: compare ALL fields, including empty → clear
+            if new_mcs != (old_mcs or ''):
+                if new_mcs:
+                    article_changes.append(f"MCS: {old_mcs or '—'} → {new_mcs}")
+                elif old_mcs:
+                    article_changes.append(f"MCS: {old_mcs} → 🗑️ cleared")
+            if new_fgt != (old_fgt or ''):
+                if new_fgt:
+                    article_changes.append(f"FGT: {old_fgt or '—'} → {new_fgt}")
+                elif old_fgt:
+                    article_changes.append(f"FGT: {old_fgt} → 🗑️ cleared")
+            if new_ft != (old_ft or ''):
+                if new_ft:
+                    article_changes.append(f"FT: {old_ft or '—'} → {new_ft}")
+                elif old_ft:
+                    article_changes.append(f"FT: {old_ft} → 🗑️ cleared")
+            if new_wt != (old_wt or ''):
+                if new_wt:
+                    article_changes.append(f"WT: {old_wt or '—'} → {new_wt}")
+                elif old_wt:
+                    article_changes.append(f"WT: {old_wt} → 🗑️ cleared")
+        else:
+            # Non-overwrite mode: only detect changes for non-empty new values
+            if new_mcs and new_mcs != (old_mcs or ''):
+                article_changes.append(f"MCS: {old_mcs or '—'} → {new_mcs}")
+            if new_fgt and new_fgt != (old_fgt or ''):
+                article_changes.append(f"FGT: {old_fgt or '—'} → {new_fgt}")
+            if new_ft and new_ft != (old_ft or ''):
+                article_changes.append(f"FT: {old_ft or '—'} → {new_ft}")
+            if new_wt and new_wt != (old_wt or ''):
+                article_changes.append(f"WT: {old_wt or '—'} → {new_wt}")
         
         if article_changes:
-            # Only update fields that have new values (non-empty)
-            update_fields = []
-            update_values = []
-            if new_mcs:
-                update_fields.append('mcs_status = %s')
-                update_values.append(new_mcs)
-            if new_fgt:
-                update_fields.append('fgt_status = %s')
-                update_values.append(new_fgt)
-            if new_ft:
-                update_fields.append('ft_status = %s')
-                update_values.append(new_ft)
-            if new_wt:
-                update_fields.append('wt_status = %s')
-                update_values.append(new_wt)
+            if overwrite_empty:
+                # Overwrite ALL 4 fields (including empty = clear)
+                cursor.execute('''
+                    UPDATE articles SET mcs_status = %s, fgt_status = %s, ft_status = %s, wt_status = %s, updated_at = %s
+                    WHERE article_number = %s
+                ''', (new_mcs, new_fgt, new_ft, new_wt, now, article_number))
+            else:
+                # Only update non-empty fields
+                update_fields = []
+                update_values = []
+                if new_mcs:
+                    update_fields.append('mcs_status = %s')
+                    update_values.append(new_mcs)
+                if new_fgt:
+                    update_fields.append('fgt_status = %s')
+                    update_values.append(new_fgt)
+                if new_ft:
+                    update_fields.append('ft_status = %s')
+                    update_values.append(new_ft)
+                if new_wt:
+                    update_fields.append('wt_status = %s')
+                    update_values.append(new_wt)
+                if update_fields:
+                    update_fields.append('updated_at = %s')
+                    update_values.append(now)
+                    update_values.append(article_number)
+                    cursor.execute(f"UPDATE articles SET {', '.join(update_fields)} WHERE article_number = %s", update_values)
             
-            if update_fields:
-                update_fields.append('updated_at = %s')
-                update_values.append(now)
-                update_values.append(article_number)
-                cursor.execute(f"UPDATE articles SET {', '.join(update_fields)} WHERE article_number = %s", update_values)
-                updated += 1
-                changes_detail[article_number] = article_changes
+            updated += 1
+            changes_detail[article_number] = article_changes
         else:
             unchanged += 1
     
@@ -1372,7 +1407,7 @@ if uploaded_file is not None:
                 combined = pd.concat(all_status_data, ignore_index=True)
                 st.info(f"📊 Processing: {', '.join(sheets_found)} — Total: **{len(combined)}** articles")
                 
-                matched, updated, not_found, unchanged, not_found_list, changes_detail = update_all_statuses(combined)
+                matched, updated, not_found, unchanged, not_found_list, changes_detail = update_all_statuses(combined, overwrite_empty=True)
                 print(f"[DEBUG] Inline status result: matched={matched}, updated={updated}, not_found={not_found}, unchanged={unchanged}")
                 
                 # Build result message
