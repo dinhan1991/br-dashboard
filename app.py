@@ -1660,8 +1660,16 @@ if len(br_data) > 0:
         if 'PENDING' in all_statuses or 'ETD' in all_statuses or 'ETC' in all_statuses or 'SENT' in all_statuses:
             return '🔴 PENDING'
         
-        # Check if PASSED - fgt can be 'PASSED', 'PASSED (FD approved)', etc.
-        if mcs == 'APPROVED' and fgt.startswith('PASSED'):
+        # Check if PASSED:
+        # MCS can be APPROVED or PASSED or WAIVED
+        # FGT must start with PASSED or be APPROVED / WAIVED
+        # FT & WT must be PASSED, N/A, WAIVED, or empty
+        mcs_ok = mcs in ('APPROVED', 'PASSED', 'PASS', 'WAIVED') or mcs.startswith('PASSED') or mcs.startswith('APPROVED')
+        fgt_ok = fgt in ('APPROVED', 'PASSED', 'PASS', 'WAIVED') or fgt.startswith('PASSED') or fgt.startswith('APPROVED')
+        ft_ok = ft in ('', 'PASSED', 'APPROVED', 'PASS', 'N/A', 'NA', 'WAIVED') or ft.startswith('PASSED') or ft.startswith('APPROVED') or ft.startswith('N/A')
+        wt_ok = wt in ('', 'PASSED', 'APPROVED', 'PASS', 'N/A', 'NA', 'WAIVED') or wt.startswith('PASSED') or wt.startswith('APPROVED') or wt.startswith('N/A')
+        
+        if mcs_ok and fgt_ok and ft_ok and wt_ok:
             return '✅ PASSED'
         
         return '🔄 Processing'
