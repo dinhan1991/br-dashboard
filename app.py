@@ -430,8 +430,8 @@ def update_all_statuses(df, overwrite_empty=False):
     changes_detail = {}  # {article_number: [list of changes]}
     
     for _, row in df.iterrows():
-        article_number = str(row.get('Article NUMBER', '')).strip()
-        if not article_number or article_number == 'nan':
+        article_number = str(row.get('Article NUMBER', '')).strip().upper()
+        if not article_number or article_number.lower() in ('nan', 'none', '<na>'):
             continue
         
         new_mcs = str(row.get('MCS status', '')).strip()
@@ -440,17 +440,17 @@ def update_all_statuses(df, overwrite_empty=False):
         new_wt = str(row.get('WT status', '')).strip()
         
         # Clean nan values to empty string
-        new_mcs = '' if new_mcs in ('nan', 'None', 'none') else new_mcs
-        new_fgt = '' if new_fgt in ('nan', 'None', 'none') else new_fgt
-        new_ft = '' if new_ft in ('nan', 'None', 'none') else new_ft
-        new_wt = '' if new_wt in ('nan', 'None', 'none') else new_wt
+        new_mcs = '' if new_mcs.lower() in ('nan', 'none', '<na>', 'nat', '') else new_mcs
+        new_fgt = '' if new_fgt.lower() in ('nan', 'none', '<na>', 'nat', '') else new_fgt
+        new_ft = '' if new_ft.lower() in ('nan', 'none', '<na>', 'nat', '') else new_ft
+        new_wt = '' if new_wt.lower() in ('nan', 'none', '<na>', 'nat', '') else new_wt
         
         # Skip if all statuses are empty AND not in overwrite mode
         if not overwrite_empty and all(v == '' for v in [new_mcs, new_fgt, new_ft, new_wt]):
             continue
         
-        # Check if article exists and get current values
-        cursor.execute('SELECT mcs_status, fgt_status, ft_status, wt_status FROM articles WHERE article_number = %s', (article_number,))
+        # Check if article exists and get current values (case-insensitive)
+        cursor.execute('SELECT mcs_status, fgt_status, ft_status, wt_status, article_number FROM articles WHERE UPPER(article_number) = %s', (article_number,))
         existing = cursor.fetchone()
         
         if existing is None:
@@ -459,7 +459,7 @@ def update_all_statuses(df, overwrite_empty=False):
             continue
         
         matched += 1
-        old_mcs, old_fgt, old_ft, old_wt = existing
+        old_mcs, old_fgt, old_ft, old_wt, db_art_num = existing
         
         # Check what changed
         article_changes = []
@@ -501,7 +501,7 @@ def update_all_statuses(df, overwrite_empty=False):
                 # Overwrite ALL 4 fields (including empty = clear)
                 cursor.execute('''
                     UPDATE articles SET mcs_status = %s, fgt_status = %s, ft_status = %s, wt_status = %s, updated_at = %s
-                    WHERE article_number = %s
+                    WHERE UPPER(article_number) = %s
                 ''', (new_mcs, new_fgt, new_ft, new_wt, now, article_number))
             else:
                 # Only update non-empty fields
@@ -544,12 +544,59 @@ ALLOWED_SPORTS = ['AMERICAN FOOTBALL', 'BASEBALL', 'SOFTBALL']
 ALLOWED_FACTORIES = ['HWA']
 
 # Helper functions
+def clean_article_str(val):
+    if pd.isna(val):
+        return ''
+    s = str(val).strip()
+    if s.endswith('.0') and s[:-2].isdigit():
+        return s[:-2]
+    if s.lower() in ('nan', 'none', '<na>', 'nat'):
+        return ''
+    return s.upper()
+
 def find_column(df, possible_names):
-    df_columns_lower = {col.lower().strip(): col for col in df.columns}
+    df_columns_lower = {str(col).lower().strip(): col for col in df.columns}
+    # 1. Exact match
     for name in possible_names:
-        if name.lower().strip() in df_columns_lower:
-            return df_columns_lower[name.lower().strip()]
+        name_lower = name.lower().strip()
+        if name_lower in df_columns_lower:
+            return df_columns_lower[name_lower]
+    # 2. Prefix / partial match
+    for name in possible_names:
+        name_lower = name.lower().strip()
+        for col_str, col_orig in df_columns_lower.items():
+            if col_str.startswith(name_lower):
+                return col_orig
     return None
+
+def parse_inline_sheet(xl, sheet_name):
+    """Parse an inline status sheet, auto-detecting the header row even if there are count/title rows above it."""
+    try:
+        df_raw = xl.parse(sheet_name, header=None)
+    except Exception as e:
+        print(f"[DEBUG] Error parsing sheet {sheet_name}: {e}")
+        return pd.DataFrame()
+    
+    if len(df_raw) == 0:
+        return pd.DataFrame()
+    
+    # Locate header row: check first 15 rows for 'article' or status columns
+    header_idx = None
+    for idx in range(min(15, len(df_raw))):
+        row_strs = [str(val).lower().strip() for val in df_raw.iloc[idx].dropna()]
+        has_article = any('article' in s or s in ('art. no.', 'art no', 'art.') for s in row_strs)
+        has_statuses = any('mcs' in s for s in row_strs) and any('fgt' in s for s in row_strs)
+        if has_article or has_statuses:
+            header_idx = idx
+            break
+            
+    if header_idx is None:
+        header_idx = 0
+        
+    headers = [str(col).strip() if pd.notna(col) else f"Unnamed_{i}" for i, col in enumerate(df_raw.iloc[header_idx])]
+    df_data = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
+    df_data.columns = headers
+    return df_data
 
 def detect_file_type(file):
     """Detect if file is Buy Ready, Drop Report, or Inline Status based on filename/sheets"""
@@ -563,8 +610,8 @@ def detect_file_type(file):
         # Check sheet names for inline status file
         try:
             xl = pd.ExcelFile(file)
-            sheet_names_lower = [s.lower().strip() for s in xl.sheet_names]
-            if 'af-inline' in sheet_names_lower or 'dg-inline' in sheet_names_lower:
+            sheet_names_clean = [str(s).lower().replace(' ', '').replace('_', '-') for s in xl.sheet_names]
+            if any('af-inline' in s or 'afinline' in s or 'dg-inline' in s or 'dginline' in s for s in sheet_names_clean):
                 file.seek(0)  # Reset file pointer after reading
                 return 'inline_status'
         except:
@@ -1356,9 +1403,10 @@ if uploaded_file is not None:
             af_sheet = None
             dg_sheet = None
             for s in sheet_names:
-                if s.lower().strip() == 'af-inline':
+                s_clean = str(s).lower().replace(' ', '').replace('_', '-')
+                if 'af-inline' in s_clean or 'afinline' in s_clean:
                     af_sheet = s
-                elif s.lower().strip() == 'dg-inline':
+                elif 'dg-inline' in s_clean or 'dginline' in s_clean:
                     dg_sheet = s
             
             all_status_data = []
@@ -1368,33 +1416,51 @@ if uploaded_file is not None:
                 if sheet_name is None:
                     continue
                 
-                df_sheet = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+                df_sheet = parse_inline_sheet(xl, sheet_name)
                 print(f"[DEBUG] Inline sheet '{sheet_name}': {len(df_sheet)} rows, columns: {list(df_sheet.columns)}")
                 
                 # Find columns
-                col_article = find_column(df_sheet, ['Article NUMBER', 'Article Number', 'Article', 'Art. No.', 'Art No', 'Article No'])
-                col_mcs = find_column(df_sheet, ['MCS status', 'MCS', 'MCS Status'])
-                col_fgt = find_column(df_sheet, ['FGT status', 'FGT', 'FGT Status'])
-                col_ft = find_column(df_sheet, ['FT status', 'FT', 'FT Status'])
-                col_wt = find_column(df_sheet, ['WT status', 'WT', 'WT Status'])
+                col_article = find_column(df_sheet, ['Article NUMBER', 'Article Number', 'Article', 'Art. No.', 'Art No', 'Article No', 'Art NUMBER', 'Art Number', 'Article No.'])
+                col_mcs = find_column(df_sheet, ['MCS status', 'MCS Status', 'MCS'])
+                col_fgt = find_column(df_sheet, ['FGT status', 'FGT Status', 'FGT'])
+                col_ft = find_column(df_sheet, ['FT status', 'FT Status', 'FT'])
+                col_wt = find_column(df_sheet, ['WT status', 'WT Status', 'WT'])
+                col_ft_wt = find_column(df_sheet, ['FT/WT status', 'FT/WT Status', 'FT/WT', 'FT / WT status', 'FT / WT', 'FT-WT status', 'FT/WT st', 'FT/WT'])
                 
-                print(f"[DEBUG] Inline '{sheet_name}' column mapping: article={col_article}, mcs={col_mcs}, fgt={col_fgt}, ft={col_ft}, wt={col_wt}")
+                print(f"[DEBUG] Inline '{sheet_name}' column mapping: article={col_article}, mcs={col_mcs}, fgt={col_fgt}, ft={col_ft}, wt={col_wt}, ft_wt={col_ft_wt}")
                 
                 if col_article is None:
-                    st.warning(f"⚠️ Sheet **{sheet_name}**: Không tìm thấy cột Article NUMBER. Columns: {', '.join(df_sheet.columns.tolist())}")
+                    cols_str = ', '.join(str(c) for c in df_sheet.columns.tolist()[:10])
+                    st.warning(f"⚠️ Sheet **{sheet_name}**: Không tìm thấy cột Article NUMBER. Các cột tìm thấy: {cols_str}")
                     continue
+                
+                # Resolve FT and WT series:
+                # If separate FT/WT column exists, use it. Otherwise, fallback to combined FT/WT column if available.
+                if col_ft:
+                    ft_series = df_sheet[col_ft].astype(str).str.strip()
+                elif col_ft_wt:
+                    ft_series = df_sheet[col_ft_wt].astype(str).str.strip()
+                else:
+                    ft_series = ''
+                    
+                if col_wt:
+                    wt_series = df_sheet[col_wt].astype(str).str.strip()
+                elif col_ft_wt:
+                    wt_series = df_sheet[col_ft_wt].astype(str).str.strip()
+                else:
+                    wt_series = ''
                 
                 # Build status data
                 sheet_data = pd.DataFrame({
-                    'Article NUMBER': df_sheet[col_article].astype(str).str.strip(),
+                    'Article NUMBER': df_sheet[col_article].apply(clean_article_str),
                     'MCS status': df_sheet[col_mcs].astype(str).str.strip() if col_mcs else '',
                     'FGT status': df_sheet[col_fgt].astype(str).str.strip() if col_fgt else '',
-                    'FT status': df_sheet[col_ft].astype(str).str.strip() if col_ft else '',
-                    'WT status': df_sheet[col_wt].astype(str).str.strip() if col_wt else '',
+                    'FT status': ft_series,
+                    'WT status': wt_series,
                 })
                 
                 # Filter out rows with no article number
-                sheet_data = sheet_data[sheet_data['Article NUMBER'].notna() & (sheet_data['Article NUMBER'] != '') & (sheet_data['Article NUMBER'] != 'nan')]
+                sheet_data = sheet_data[sheet_data['Article NUMBER'] != '']
                 
                 if len(sheet_data) > 0:
                     all_status_data.append(sheet_data)
